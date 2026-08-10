@@ -1,0 +1,74 @@
+{
+    "name": "libp2p_mix_rln_module",
+    "display_name": "Logos Mixnet (libp2p + Mix + RLN)",
+    "version": "0.1.0",
+    "description": "Logos mixnet node: libp2p transport, Sphinx-based mix routing, RLN per-hop rate limiting. Implements LIP LOGOS-MIXNET.",
+    "author": "Logos Core Team",
+    "type": "core",
+    "interface": "universal",
+    "codegen": {
+        "impl_header": "plugin.h"
+    },
+    "category": "protocol",
+    "main": "libp2p_mix_rln_module_plugin",
+    "dependencies": [],
+    "include": ["libp2p_mix_rln.so", "libp2p_mix_rln.dylib", "libp2p_mix_rln.dll"],
+    "capabilities": [],
+
+    "config": {
+        "env": "LIBP2P_MIX_RLN_MODULE_CONFIG",
+        "description": "JSON config — inline, or a path to a JSON file — overlaid onto the default options when the module is loaded. Every key is optional. LIP LOGOS-MIXNET fixes several protocol parameters (path length, Sphinx sizes, cover-traffic strategy); those are not configurable. Parameters marked TBD in LIP LOGOS-MIXNET are exposed here with placeholder defaults that MUST be pinned before mainnet use.",
+        "schema": {
+            "addrs": "array<multiaddr string> — libp2p listen addresses",
+            "bootstrapNodes": "array<{ peerId: string, addrs: array<multiaddr string> }> — libp2p bootstrap peers used to seed mix-node discovery",
+            "transport": "string — \"tcp\" | \"quic\"",
+            "privKey": "string — hex-encoded libp2p host private key. Omit to generate on start.",
+            "maxConnections": "int",
+            "maxInConnections": "int",
+            "maxOutConnections": "int",
+            "maxConnsPerPeer": "int",
+
+            "mix": {
+                "mixPrivKey": "string — hex-encoded X25519 private key advertised for Sphinx path selection. Omit to generate on start.",
+                "cover": {
+                    "rateFraction": "float — CONSTANT_RATE cover-traffic ratio. LIP LOGOS-MIXNET default: 0.7."
+                }
+            },
+
+            "rln": {
+                "keystorePath": "string — path to the RLN keystore file",
+                "keystorePassword": "string — password for the RLN keystore",
+                "treePath": "string — path to the persisted Merkle tree",
+                "rlnResourcesPath": "string — path to zerokit precomputed resources (verification key, circom .zkey)",
+                "rlnIdentifier": "string — hex-encoded RLN identifier for this Logos mixnet deployment",
+                "epochDurationSeconds": "int — RLN epoch length. LIP LOGOS-MIXNET: TBD; placeholder default 1.",
+                "period": "int — messaging period. LIP LOGOS-MIXNET: TBD; placeholder default 1.",
+                "messagingRate": "int — allowed messages per period. LIP LOGOS-MIXNET: TBD; placeholder default 10.",
+                "maxEpochGap": "int — accepted epoch drift. LIP LOGOS-MIXNET: TBD; placeholder default 20.",
+                "userMessageLimit": "int — per-user message cap per epoch. LIP LOGOS-MIXNET: TBD; placeholder default 100.",
+                "acceptableRootWindowSize": "int — Merkle-root history window. LIP LOGOS-MIXNET: 5.",
+                "stakedFund": "string — required stake to register. LIP LOGOS-MIXNET: TBD.",
+                "membershipContentTopic": "string — RLN Relay content topic for membership. LIP LOGOS-MIXNET: TBD; placeholder \"/mix/rln/membership/v1\".",
+                "proofMetadataContentTopic": "string — RLN Relay content topic for proof metadata. LIP LOGOS-MIXNET: TBD; placeholder \"/mix/rln/metadata/v1\".",
+                "coordCluster": "int — RLN Relay cluster id. LIP LOGOS-MIXNET: TBD; placeholder 0."
+            },
+
+            "discovery": {
+                "mountServiceDiscovery": "bool — enable Logos Service Discovery",
+                "serviceId": "string — service id advertised by mix-capable nodes. LIP LOGOS-MIXNET: TBD; placeholder \"logos.mixnet\"."
+            }
+        }
+    },
+
+    "nix": {
+        "packages": {
+            "runtime": ["nlohmann_json", "tinycbor"]
+        },
+        "external_libraries": [
+            { "name": "libp2p_mix_rln", "vendor_path": "lib" }
+        ],
+        "cmake": {
+            "extra_include_dirs": ["lib"]
+        }
+    }
+}

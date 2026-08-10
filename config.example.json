@@ -1,0 +1,34 @@
+{
+  "addrs": ["/ip4/0.0.0.0/tcp/9100"],
+  "transport": "tcp",
+  "maxConnections": 50,
+  "maxInConnections": 25,
+  "maxOutConnections": 25,
+  "maxConnsPerPeer": 1,
+
+  "mix": {
+    "cover": { "rateFraction": 0.7 }
+  },
+
+  "rln": {
+    "keystorePath": "./keystore.json",
+    "keystorePassword": "changeme",
+    "treePath": "./rln-tree",
+    "rlnResourcesPath": "./rln-resources",
+    "rlnIdentifier": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "epochDurationSeconds": 1,
+    "period": 1,
+    "messagingRate": 10,
+    "maxEpochGap": 20,
+    "userMessageLimit": 100,
+    "acceptableRootWindowSize": 5,
+    "membershipContentTopic": "/mix/rln/membership/v1",
+    "proofMetadataContentTopic": "/mix/rln/metadata/v1",
+    "coordCluster": 0
+  },
+
+  "discovery": {
+    "mountServiceDiscovery": true,
+    "serviceId": "logos.mixnet"
+  }
+}
