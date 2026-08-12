@@ -4,16 +4,10 @@
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
 
-    # Placeholder: this input MUST point at a Nim FFI facade that exposes
-    # nim-libp2p, nim-libp2p-mix and mix-rln-spam-protection-plugin through a
-    # C header (lib/libp2p_mix_rln.h) and shared object (libp2p_mix_rln.{so,dylib,dll}),
-    # analogous to how logos-libp2p-module consumes nim-libp2p's `cbind` package.
-    #
-    # That facade does not exist yet — creating it is the next task after this
-    # scaffold lands. Track: https://github.com/logos-co/logos-libp2p-mix-rln/issues
-    #
-    # Until then, this flake will fail to evaluate. Comment out the module {} block
-    # below to build only metadata/tests/config artifacts.
+    # The Nim FFI facade lives at logos-co/nim-libp2p-mix-rln. Not yet pushed
+    # to the org — override on the CLI with `--override-input libp2p-mix-rln
+    # path:/path/to/nim-libp2p-mix-rln` (and the two zerokit overrides that
+    # repo's README documents) until it's public.
     libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln";
   };
 

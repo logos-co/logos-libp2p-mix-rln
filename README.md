@@ -6,13 +6,52 @@ using Sphinx routing with per-hop RLN rate limiting.
 Sibling module to [`logos-libp2p-module`][libp2p-module]; shares its C++/Qt
 plugin shape, config-via-env convention, and nim-ffi bridge pattern.
 
-## Status: scaffold
+## Status: FFI wired, module builds cleanly
 
-The C++ plugin surface, config schema, and build wiring are in place. Every
-FFI-backed operation currently returns a `not implemented` result. Turning this
-into a working module requires the two remaining pieces below.
+The C++ plugin bodies now call into the Nim FFI facade
+[`nim-libp2p-mix-rln`][nim-facade] via the sync-over-async bridge pattern
+that `logos-libp2p-module` uses. `nix build .#libp2p_mix_rln_module-lib`
+produces `libp2p_mix_rln_module_plugin.so` — verified end-to-end with the
+zerokit v2 overrides described below.
 
-### What's still needed
+Wired methods:
+- `createNode` (rebuilds the Nim `LibMixRlnCtx` from JSON config)
+- `start` / `stop` / `getNodeInfo` (Version / PeerId / Multiaddrs)
+- `registerRlnMembership` / `hasRlnMembership`
+- `sendMixMessage` / `sendMixMessageWithSurb` / `sendMixSurbReply`
+- `listMixPeers` / `getCoverTrafficRate` / `setCoverTrafficRate`
+
+Event fan-out: `onIncomingMixMessage`, `onRlnMembershipRegistered`,
+`onRlnPublishRequested` are registered on ctx-create; each dispatches through
+the plugin's `emitEvent` `std::function` to the host.
+
+## Build
+
+Requires the same zerokit v2 overrides as `nim-libp2p-mix-rln` until its
+upstream fixes land:
+
+```sh
+nix build .#libp2p_mix_rln_module-lib \
+  --override-input libp2p-mix-rln path:/path/to/nim-libp2p-mix-rln \
+  --override-input libp2p-mix-rln/zerokit path:/path/to/zerokit-v2-fork \
+  --override-input libp2p-mix-rln/zerokit/nixpkgs github:NixOS/nixpkgs?rev=cd648d6ea62bc0ffba91e61fcfe5e33c1e2004b1
+```
+
+See `nim-libp2p-mix-rln/README.md` for what the zerokit-v2 fork needs.
+
+## What's still not wired
+
+Runtime behavior only exercised via a minimal smoke test on the Nim side
+(NimMain → ctx_create → get_node_info(PeerId) → destroy). Full end-to-end
+messaging between two mix nodes has not been demoed. Known stubs remaining:
+
+- `getNodeInfo(MixPublicKey | RlnMembershipIndex)` — upstream API gap
+- `sendMixSurbReply` — upstream reply-store lookup not exposed
+- `listMixPeers` — needs Logos Service Discovery wiring
+
+[nim-facade]: https://github.com/logos-co/nim-libp2p-mix-rln
+
+### What's still needed for full spec compliance
 
 1. **`nim-libp2p-mix-rln` — Nim FFI facade.** A separate repo (not yet
    created) analogous to how `nim-libp2p` exposes a `cbind` package consumed

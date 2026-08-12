@@ -2,18 +2,17 @@
 
 // Logos Mixnet Module — public C++ surface exposed to the Logos Core codegen.
 //
-// STATUS: scaffold. The FFI-backed body of every method is a stub that returns
-// StdLogosResult{false, {}, "not implemented"} until the companion Nim FFI
-// facade (`nim-libp2p-mix-rln`, producing `libp2p_mix_rln.{so,dylib,dll}` and
-// `lib/libp2p_mix_rln.h`) is built and vendored per metadata.json's
-// nix.external_libraries entry. Once wired, this class will follow the same
-// sync-over-async bridge pattern as logos-libp2p-module's Libp2pModuleImpl.
-//
-// The API surface below is what LIP LOGOS-MIXNET requires a mixnet node to
-// expose plus the standard node-lifecycle operations Logos Core modules share.
+// Bodies live in plugin.cpp. Every FFI-backed operation is a sync-over-async
+// bridge: build a std::promise, submit through the nim-ffi typed wrapper (which
+// takes a reply callback), await the promise with a timeout, translate the
+// reply into StdLogosResult. Follows the same pattern as
+// logos-libp2p-module/src/plugin.{h,cpp} but against libp2p_mix_rln.h.
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
+#include <future>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -22,7 +21,35 @@
 #include "logos_json.h"
 #include "logos_result.h"
 
+// The nim-ffi generated header is header-only C: it declares the exported Nim
+// symbols inside its own `extern "C"` block and exposes the async API as
+// `static inline` wrappers plus C++-linkage callback typedefs. It must NOT be
+// wrapped in an extra `extern "C"` here, or the reply-callback typedefs would
+// take C linkage and no longer match the C++ static callbacks we pass in.
+#include <libp2p_mix_rln.h>
+
 #include "config.h"
+
+// Timeouts (milliseconds) for the sync-over-async libp2p_mix_rln bridge.
+// Sized like logos-libp2p-module — long enough for a network create + RLN
+// initialization on a slow machine, short enough that a hang is caught.
+inline constexpr int kDefaultOpTimeoutMs = 10000;
+inline constexpr int kCreateTimeoutMs    = 30000;   // RLN init + Switch build
+inline constexpr int kStopTimeoutMs      = 15000;   // switch.stop over many conns
+
+// Result carried through the sync-over-async bridge. Only the fields the
+// invoking op cares about are populated; the rest stay defaulted.
+struct SyncResult {
+    bool ok = false;
+    std::string message;
+    // Optional carriers for typed reply data. Each op consumes at most one.
+    std::string strValue;
+    int64_t     intValue = 0;
+    bool        boolValue = false;
+    LibMixRlnCtx* newCtx = nullptr;
+    // For collection replies where a std::string carrier isn't a good fit.
+    nlohmann::json jsonValue;
+};
 
 class Libp2pMixRlnModuleImpl {
 public:
@@ -33,7 +60,7 @@ public:
     // Known event names:
     //   "IncomingMixMessage" — {protocol, payload_b64, surb_b64?}
     //   "RlnMembershipRegistered" — {index, root}
-    //   "CoverTrafficRate" — {rate}
+    //   "RlnPublishRequested" — {contentTopic, payload_b64}
     std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
     // Health / status ------------------------------------------------------
@@ -41,8 +68,6 @@ public:
     StdLogosResult status();
 
     // Node lifecycle -------------------------------------------------------
-    // Rebuilds the underlying node from a JSON config. Accepts the same schema
-    // as LIBP2P_MIX_RLN_MODULE_CONFIG.
     StdLogosResult createNode(const std::string& configJson);
     StdLogosResult start();
     StdLogosResult stop();
@@ -52,46 +77,48 @@ public:
     StdLogosResult getNodeInfo(const std::string& field);
 
     // RLN membership -------------------------------------------------------
-    // Registers this node in the RLN group used by the mixnet. In the Logos
-    // deployment, membership is coordinated over the RLN Relay content topic
-    // configured under rln.membershipContentTopic.
     StdLogosResult registerRlnMembership();
-    // True if this node currently holds a valid RLN membership proof.
     StdLogosResult hasRlnMembership();
 
     // Mixnet send ----------------------------------------------------------
-    // Sends `payload` through a path-length-3 Sphinx circuit to `destPeerId`
-    // for protocol `proto` (mounted on the destination as a libp2p protocol
-    // id). Each hop generates a fresh RLN proof; the exit unwraps and hands
-    // the payload to the destination protocol handler.
     StdLogosResult sendMixMessage(const std::string& destPeerId,
                                   const std::string& proto,
                                   const std::vector<uint8_t>& payload);
 
-    // Same as above but attaches a Single-Use Reply Block so the receiver can
-    // reply anonymously. Returns the SURB id.
     StdLogosResult sendMixMessageWithSurb(const std::string& destPeerId,
                                           const std::string& proto,
                                           const std::vector<uint8_t>& payload);
 
-    // Sends `payload` back along a previously received SURB.
     StdLogosResult sendMixSurbReply(const std::vector<uint8_t>& surb,
                                     const std::vector<uint8_t>& payload);
 
     // Mix-node inventory ---------------------------------------------------
-    // Peers discovered via Logos Service Discovery that advertise the mix
-    // capability and a routable multiaddr + X25519 pubkey (Extensible Peer
-    // Records per LIP LOGOS-MIXNET).
     StdLogosResult listMixPeers();
 
     // Cover traffic --------------------------------------------------------
-    // Reads/updates the CONSTANT_RATE cover-traffic ratio (LIP LOGOS-MIXNET
-    // default 0.7).
     StdLogosResult getCoverTrafficRate();
     StdLogosResult setCoverTrafficRate(double rate);
 
     // Diagnostics ----------------------------------------------------------
-    // Aggregated counters. Shape TBD; will follow openmetrics-module's
-    // convention once the Nim FFI exposes the underlying counters.
     LogosMap collectMetrics();
+
+    // ------------------------------------------------------------------
+    // Members below are for plugin.cpp's internal helpers. Kept public so
+    // file-scope trampolines in plugin.cpp can access them, but they are NOT
+    // part of the module's LIDL interface — the codegen skips non-method
+    // members. Do not call from other modules.
+    // ------------------------------------------------------------------
+
+    LibMixRlnCtx* m_ctx = nullptr;
+    Libp2pMixRlnModuleOptions m_options;
+
+    // Set by the constructor if the initial createNode failed. Surfaced by
+    // status() since the constructor cannot signal failure to the codegen
+    // default-constructor.
+    std::string m_initError;
+
+    // Serialize op submission: nim-ffi's C API is thread-safe for the async
+    // dispatch, but our sync-over-async waiter would race if two ops queued
+    // simultaneously and their replies interleaved into the same promise.
+    std::mutex m_callMutex;
 };
