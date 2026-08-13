@@ -4,11 +4,11 @@
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
 
-    # The Nim FFI facade lives at logos-co/nim-libp2p-mix-rln. Not yet pushed
-    # to the org — override on the CLI with `--override-input libp2p-mix-rln
-    # path:/path/to/nim-libp2p-mix-rln` (and the two zerokit overrides that
-    # repo's README documents) until it's public.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln";
+    # The Nim FFI facade lives at logos-co/nim-libp2p-mix-rln-ffi. Building
+    # it currently requires the two zerokit v2 overrides its README documents
+    # (blocked on zerokit PR #436) — see this repo's README for the full
+    # command.
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi";
 
     # For `nix run .#standalone-e2e`. Kept out-of-tree because they only
     # matter for the runtime e2e; unit tests / library builds don't need them.
