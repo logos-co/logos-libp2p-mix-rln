@@ -290,11 +290,22 @@ void hostEmit(Libp2pMixRlnModuleImpl* self, const char* name, const nlohmann::js
 static void onIncomingMixMessage(const IncomingMixMessageEvent* evt, void* ud) {
     auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
     if (!evt || !self) return;
+    std::string proto(evt->proto.data ? evt->proto.data : "",
+                      evt->proto.data ? evt->proto.len : 0);
+    std::vector<uint8_t> payload(evt->payload.data,
+                                 evt->payload.data + evt->payload.len);
+    // Push-style: fire the host callback if one is registered.
     hostEmit(self, "IncomingMixMessage", {
-        {"proto",   std::string(evt->proto.data ? evt->proto.data : "",   evt->proto.data ? evt->proto.len : 0)},
-        {"payload", std::vector<uint8_t>(evt->payload.data, evt->payload.data + evt->payload.len)},
-        {"surb",    std::vector<uint8_t>(evt->surb.data,    evt->surb.data + evt->surb.len)},
+        {"proto",   proto},
+        {"payload", payload},
+        {"surb",    std::vector<uint8_t>(evt->surb.data, evt->surb.data + evt->surb.len)},
     });
+    // Pull-style: buffer for `drainReceivedMessages` (used by shell-driven
+    // orchestration that can't subscribe to events).
+    {
+        std::lock_guard<std::mutex> lk(self->m_backlogMutex);
+        self->m_inbox.push_back({std::move(proto), std::move(payload)});
+    }
 }
 
 static void onRlnMembershipRegistered(const RlnMembershipRegisteredEvent* evt, void* ud) {
@@ -309,11 +320,20 @@ static void onRlnMembershipRegistered(const RlnMembershipRegisteredEvent* evt, v
 static void onRlnPublishRequested(const RlnPublishRequestedEvent* evt, void* ud) {
     auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
     if (!evt || !self) return;
+    std::string topic(evt->contentTopic.data ? evt->contentTopic.data : "",
+                      evt->contentTopic.data ? evt->contentTopic.len : 0);
+    std::vector<uint8_t> payload(evt->payload.data,
+                                 evt->payload.data + evt->payload.len);
     hostEmit(self, "RlnPublishRequested", {
-        {"contentTopic", std::string(evt->contentTopic.data ? evt->contentTopic.data : "",
-                                     evt->contentTopic.data ? evt->contentTopic.len : 0)},
-        {"payload",      std::vector<uint8_t>(evt->payload.data, evt->payload.data + evt->payload.len)},
+        {"contentTopic", topic},
+        {"payload",      payload},
     });
+    // Same pull-style buffering so a shell orchestrator can ferry frames
+    // between logoscore daemons via `drainCoordBacklog` + `deliverCoordFrame`.
+    {
+        std::lock_guard<std::mutex> lk(self->m_backlogMutex);
+        self->m_coordBacklog.push_back({std::move(topic), std::move(payload)});
+    }
 }
 
 } // namespace  (closes the file-scope anonymous namespace opened above the
@@ -494,25 +514,28 @@ StdLogosResult Libp2pMixRlnModuleImpl::hasRlnMembership() {
 
 // Mix send ---------------------------------------------------------------
 
-// submitMixSend is a private static so it can access cbMixSend. Declared out
-// of line to avoid touching plugin.h for what's an internal helper.
-static StdLogosResult submitMixSend(LibMixRlnCtx* ctx, const std::string& destPeerId,
+// submitMixSend is a file-scope static so it can call cbMixSend directly.
+// `destMultiaddr` may be empty when `isExitDest` is true (exit-is-dest mode);
+// non-empty otherwise (forwardToAddr mode targeting an external destination).
+static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
+                                    const std::string& destPeerId,
+                                    const std::string& destMultiaddr,
                                     const std::string& proto,
                                     const std::vector<uint8_t>& payload,
                                     bool expectReply,
+                                    bool isExitDest,
                                     LibMixRlnSendMixMessageReplyFn cb) {
     if (!ctx) return {false, {}, "sendMixMessage: node not created"};
     MixSendRequest req{};
     req.destPeerId    = borrowStr(destPeerId);
+    req.destMultiaddr = borrowStr(destMultiaddr);
     req.proto         = borrowStr(proto);
     req.payload.data  = const_cast<uint8_t*>(payload.data());
     req.payload.len   = payload.size();
-    // destMultiaddr not modeled by the C++ API yet; the Nim side will error
-    // out with "invalid destMultiaddr" until the C++ interface takes one.
-    req.destMultiaddr = borrowStr(std::string());
     req.expectReply   = expectReply;
     req.numSurbs      = expectReply ? 1 : 0;
     req.timeoutMs     = kDefaultOpTimeoutMs;
+    req.isExitDest    = isExitDest;
 
     auto* p = new std::promise<SyncResult>();
     auto f = p->get_future();
@@ -527,17 +550,29 @@ static StdLogosResult submitMixSend(LibMixRlnCtx* ctx, const std::string& destPe
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessage(const std::string& destPeerId,
+                                                      const std::string& destMultiaddr,
                                                       const std::string& proto,
                                                       const std::vector<uint8_t>& payload) {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, proto, payload, /*expectReply=*/false, cbMixSend);
+    return submitMixSend(m_ctx, destPeerId, destMultiaddr, proto, payload,
+                         /*expectReply=*/false, /*isExitDest=*/false, cbMixSend);
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageToExit(const std::string& destPeerId,
+                                                            const std::string& proto,
+                                                            const std::vector<uint8_t>& payload) {
+    std::lock_guard<std::mutex> lk(m_callMutex);
+    return submitMixSend(m_ctx, destPeerId, /*destMultiaddr=*/{}, proto, payload,
+                         /*expectReply=*/false, /*isExitDest=*/true, cbMixSend);
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageWithSurb(const std::string& destPeerId,
+                                                              const std::string& destMultiaddr,
                                                               const std::string& proto,
                                                               const std::vector<uint8_t>& payload) {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, proto, payload, /*expectReply=*/true, cbMixSend);
+    return submitMixSend(m_ctx, destPeerId, destMultiaddr, proto, payload,
+                         /*expectReply=*/true, /*isExitDest=*/false, cbMixSend);
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixSurbReply(const std::vector<uint8_t>& surb,
@@ -576,6 +611,227 @@ StdLogosResult Libp2pMixRlnModuleImpl::listMixPeers() {
     auto r = awaitPromise(f, kDefaultOpTimeoutMs);
     if (!r.ok) return {false, {}, "listMixPeers: " + r.message};
     return {true, r.jsonValue, ""};
+}
+
+// Multi-node topology + coord ---------------------------------------------
+
+namespace {
+std::string hexEncodeBytes(const uint8_t* data, size_t len) {
+    std::string out;
+    out.reserve(len * 2);
+    static const char* hex = "0123456789abcdef";
+    for (size_t i = 0; i < len; i++) {
+        out.push_back(hex[(data[i] >> 4) & 0xF]);
+        out.push_back(hex[data[i] & 0xF]);
+    }
+    return out;
+}
+
+std::vector<uint8_t> hexDecodeStr(const std::string& in, bool& ok) {
+    ok = true;
+    std::string s = in;
+    if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) s.erase(0, 2);
+    if (s.size() % 2 != 0) { ok = false; return {}; }
+    std::vector<uint8_t> out;
+    out.reserve(s.size() / 2);
+    auto hexv = [&](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+        if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+        return -1;
+    };
+    for (size_t i = 0; i < s.size(); i += 2) {
+        int hi = hexv(s[i]), lo = hexv(s[i + 1]);
+        if (hi < 0 || lo < 0) { ok = false; return {}; }
+        out.push_back(static_cast<uint8_t>((hi << 4) | lo));
+    }
+    return out;
+}
+
+// getLocalMixPeerRecord's reply carries the whole MixPeerRecord struct — pack
+// it into a JSON object the CLI can jq into.
+void cbGetLocalMixPeerRecord(int ec, const MixPeerRecord* r,
+                             const char* em, void* ud) {
+    auto* p = static_cast<std::promise<SyncResult>*>(ud);
+    SyncResult res = baseReply(ec, em);
+    if (res.ok && r) {
+        nlohmann::json addrs = nlohmann::json::array();
+        for (size_t i = 0; i < r->multiaddrs.len; i++) {
+            const auto& s = r->multiaddrs.data[i];
+            addrs.push_back(std::string(s.data ? s.data : "", s.data ? s.len : 0));
+        }
+        res.jsonValue = {
+            {"peerId",          std::string(r->peerId.data ? r->peerId.data : "",
+                                            r->peerId.data ? r->peerId.len : 0)},
+            {"multiaddrs",      std::move(addrs)},
+            {"mixPubKeyHex",    hexEncodeBytes(r->mixPubKey.data, r->mixPubKey.len)},
+            {"libp2pPubKeyHex", std::string(r->libp2pPubKeyHex.data ? r->libp2pPubKeyHex.data : "",
+                                            r->libp2pPubKeyHex.data ? r->libp2pPubKeyHex.len : 0)},
+        };
+    }
+    finish(p, std::move(res));
+}
+} // namespace
+
+StdLogosResult Libp2pMixRlnModuleImpl::getLocalMixPeerRecord() {
+    std::lock_guard<std::mutex> lk(m_callMutex);
+    if (!m_ctx) return {false, {}, "getLocalMixPeerRecord: node not created"};
+    auto* p = new std::promise<SyncResult>();
+    auto f = p->get_future();
+    int ret = libp2p_mix_rln_ctx_get_local_mix_peer_record(m_ctx, cbGetLocalMixPeerRecord, p);
+    if (ret != 0) {
+        auto r = reclaimOnSubmitFail(p, f, ret, "getLocalMixPeerRecord");
+        return {false, {}, r.message};
+    }
+    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
+    if (!r.ok) return {false, {}, "getLocalMixPeerRecord: " + r.message};
+    return {true, r.jsonValue, ""};
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::addMixPeer(const std::string& recordJson)
+{
+    std::lock_guard<std::mutex> lk(m_callMutex);
+    if (!m_ctx) return {false, {}, "addMixPeer: node not created"};
+
+    // Parse the peer record from JSON (shape matches getLocalMixPeerRecord).
+    auto j = nlohmann::json::parse(recordJson, nullptr, false);
+    if (j.is_discarded() || !j.is_object())
+        return {false, {}, "addMixPeer: malformed recordJson"};
+    auto get_str = [&](const char* k) -> std::string {
+        auto it = j.find(k);
+        return (it != j.end() && it->is_string()) ? it->get<std::string>() : "";
+    };
+    std::string peerId          = get_str("peerId");
+    std::string mixPubKeyHex    = get_str("mixPubKeyHex");
+    std::string libp2pPubKeyHex = get_str("libp2pPubKeyHex");
+    if (peerId.empty() || mixPubKeyHex.empty() || libp2pPubKeyHex.empty())
+        return {false, {}, "addMixPeer: missing peerId/mixPubKeyHex/libp2pPubKeyHex"};
+
+    std::vector<std::string> multiaddrs;
+    auto mit = j.find("multiaddrs");
+    if (mit == j.end() || !mit->is_array())
+        return {false, {}, "addMixPeer: multiaddrs must be an array"};
+    for (const auto& v : *mit) {
+        if (!v.is_string())
+            return {false, {}, "addMixPeer: multiaddrs entries must be strings"};
+        multiaddrs.push_back(v.get<std::string>());
+    }
+
+    // Decode the hex-encoded mix pub key here (bytes) — the FFI struct takes
+    // `NimFfiBytes mixPubKey`, not hex.
+    bool okHex = false;
+    auto mixPubBytes = hexDecodeStr(mixPubKeyHex, okHex);
+    if (!okHex) return {false, {}, "addMixPeer: invalid mixPubKeyHex"};
+
+    // Build the borrowed NimFfiStr array over the C++ std::string vector.
+    std::vector<NimFfiStr> addrsFfi;
+    addrsFfi.reserve(multiaddrs.size());
+    for (const auto& a : multiaddrs) {
+        NimFfiStr s{const_cast<char*>(a.c_str()), a.size()};
+        addrsFfi.push_back(s);
+    }
+
+    MixPeerRecord rec{};
+    rec.peerId          = NimFfiStr{const_cast<char*>(peerId.c_str()), peerId.size()};
+    rec.multiaddrs.data = addrsFfi.data();
+    rec.multiaddrs.len  = addrsFfi.size();
+    rec.mixPubKey.data  = mixPubBytes.data();
+    rec.mixPubKey.len   = mixPubBytes.size();
+    rec.libp2pPubKeyHex = NimFfiStr{const_cast<char*>(libp2pPubKeyHex.c_str()),
+                                    libp2pPubKeyHex.size()};
+
+    auto* p = new std::promise<SyncResult>();
+    auto f = p->get_future();
+    int ret = libp2p_mix_rln_ctx_add_mix_peer(m_ctx, &rec, cbBool, p);
+    if (ret != 0) {
+        auto r = reclaimOnSubmitFail(p, f, ret, "addMixPeer");
+        return {false, {}, r.message};
+    }
+    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
+    if (!r.ok) return {false, {}, "addMixPeer: " + r.message};
+    return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::mountReceiver(
+    const std::string& codec, int64_t maxSize)
+{
+    std::lock_guard<std::mutex> lk(m_callMutex);
+    if (!m_ctx) return {false, {}, "mountReceiver: node not created"};
+
+    MountReceiverRequest req{};
+    req.codec   = NimFfiStr{const_cast<char*>(codec.c_str()), codec.size()};
+    req.maxSize = maxSize > 0 ? maxSize : 1 << 20;
+
+    auto* p = new std::promise<SyncResult>();
+    auto f = p->get_future();
+    int ret = libp2p_mix_rln_ctx_mount_receiver(m_ctx, &req, cbBool, p);
+    if (ret != 0) {
+        auto r = reclaimOnSubmitFail(p, f, ret, "mountReceiver");
+        return {false, {}, r.message};
+    }
+    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
+    if (!r.ok) return {false, {}, "mountReceiver: " + r.message};
+    return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::deliverCoordFrame(
+    const std::string& contentTopic, const std::string& payloadHex)
+{
+    std::lock_guard<std::mutex> lk(m_callMutex);
+    if (!m_ctx) return {false, {}, "deliverCoordFrame: node not created"};
+
+    bool ok = false;
+    auto payload = hexDecodeStr(payloadHex, ok);
+    if (!ok) return {false, {}, "deliverCoordFrame: invalid payloadHex"};
+
+    RlnCoordFrame frame{};
+    frame.contentTopic = NimFfiStr{const_cast<char*>(contentTopic.c_str()),
+                                   contentTopic.size()};
+    frame.data.data    = payload.data();
+    frame.data.len     = payload.size();
+
+    auto* p = new std::promise<SyncResult>();
+    auto f = p->get_future();
+    int ret = libp2p_mix_rln_ctx_deliver_coord_frame(m_ctx, &frame, cbBool, p);
+    if (ret != 0) {
+        auto r = reclaimOnSubmitFail(p, f, ret, "deliverCoordFrame");
+        return {false, {}, r.message};
+    }
+    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
+    if (!r.ok) return {false, {}, "deliverCoordFrame: " + r.message};
+    return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::drainCoordBacklog() {
+    std::vector<CoordBacklogEntry> drained;
+    {
+        std::lock_guard<std::mutex> lk(m_backlogMutex);
+        drained.swap(m_coordBacklog);
+    }
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : drained) {
+        arr.push_back({
+            {"contentTopic", e.contentTopic},
+            {"payloadHex",   hexEncodeBytes(e.payload.data(), e.payload.size())},
+        });
+    }
+    return {true, arr, ""};
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::drainReceivedMessages() {
+    std::vector<InboxEntry> drained;
+    {
+        std::lock_guard<std::mutex> lk(m_backlogMutex);
+        drained.swap(m_inbox);
+    }
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : drained) {
+        arr.push_back({
+            {"proto",      e.proto},
+            {"payloadHex", hexEncodeBytes(e.payload.data(), e.payload.size())},
+        });
+    }
+    return {true, arr, ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::getCoverTrafficRate() {

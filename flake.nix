@@ -64,15 +64,24 @@
           lgpmBin = "${inputs.package-manager.packages.${system}.cli}/bin/lgpm";
           standaloneE2eScript = ./tests/integration_e2e/standalone_e2e.sh;
           standaloneE2eApp = pkgs.writeShellScript "standalone-e2e" ''
-            export PATH=${pkgs.lib.makeBinPath e2eRuntime}:$PATH
+            export PATH=${pkgs.lib.makeBinPath (e2eRuntime ++ [ pkgs.xxd ])}:$PATH
             export LIBP2P_MIX_RLN_LGX_DIR=${lgxDir}
             export LOGOSCORE_BIN="''${LOGOSCORE_BIN:-${logoscoreBin}}"
             export LGPM_BIN="''${LGPM_BIN:-${lgpmBin}}"
             exec ${standaloneE2eScript} "$@"
           '';
+          multiNodeE2eScript = ./tests/integration_e2e/multi_node_e2e.sh;
+          multiNodeE2eApp = pkgs.writeShellScript "multi-node-e2e" ''
+            export PATH=${pkgs.lib.makeBinPath (e2eRuntime ++ [ pkgs.xxd ])}:$PATH
+            export LIBP2P_MIX_RLN_LGX_DIR=${lgxDir}
+            export LOGOSCORE_BIN="''${LOGOSCORE_BIN:-${logoscoreBin}}"
+            export LGPM_BIN="''${LGPM_BIN:-${lgpmBin}}"
+            exec ${multiNodeE2eScript} "$@"
+          '';
         in {
           apps = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             standalone-e2e = { type = "app"; program = toString standaloneE2eApp; };
+            multi-node-e2e = { type = "app"; program = toString multiNodeE2eApp; };
           };
         }
       );

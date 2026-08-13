@@ -82,15 +82,61 @@ public:
 
     // Mixnet send ----------------------------------------------------------
     StdLogosResult sendMixMessage(const std::string& destPeerId,
+                                  const std::string& destMultiaddr,
                                   const std::string& proto,
                                   const std::vector<uint8_t>& payload);
 
+    // Intra-mixnet send: the exit is the destination. Uses
+    // `MixDestination.exitNode(peerId)` on the Nim side — no destination
+    // multiaddr needed because the exit runs a mounted receiver protocol
+    // and handles the payload itself. Pairs with `mountReceiver`.
+    StdLogosResult sendMixMessageToExit(const std::string& destPeerId,
+                                        const std::string& proto,
+                                        const std::vector<uint8_t>& payload);
+
     StdLogosResult sendMixMessageWithSurb(const std::string& destPeerId,
+                                          const std::string& destMultiaddr,
                                           const std::string& proto,
                                           const std::vector<uint8_t>& payload);
 
     StdLogosResult sendMixSurbReply(const std::vector<uint8_t>& surb,
                                     const std::vector<uint8_t>& payload);
+
+    // Multi-node topology --------------------------------------------------
+    // Returns a JSON object {peerId, multiaddrs[], mixPubKeyHex, libp2pPubKeyHex}
+    // — everything a peer needs to feed into another node's `addMixPeer` so
+    // both can appear in each other's Sphinx path pool.
+    StdLogosResult getLocalMixPeerRecord();
+
+    // Installs a peer record into the local nodePool. Takes the whole record
+    // as a JSON string of the shape `getLocalMixPeerRecord` returns
+    // (`{peerId, multiaddrs, mixPubKeyHex, libp2pPubKeyHex}`) — passing it as
+    // a single string keeps the LIDL args scalar-only, which is what the
+    // `logoscore call` CLI knows how to marshal.
+    StdLogosResult addMixPeer(const std::string& recordJson);
+
+    // Mounts a plain libp2p protocol on `codec`; incoming length-prefixed
+    // bytes (up to `maxSize`) are queued into an inbox, drainable via
+    // `drainReceivedMessages`. Pairs with `sendMixMessage(isExitDest=true)`.
+    StdLogosResult mountReceiver(const std::string& codec, int64_t maxSize);
+
+    // RLN coordination -----------------------------------------------------
+    // Hosts observe outgoing coord traffic via the `RlnPublishRequested`
+    // event, OR (for shell-driven orchestration) pull from
+    // `drainCoordBacklog` and forward each frame to every peer's
+    // `deliverCoordFrame`. Same semantics either way.
+    StdLogosResult deliverCoordFrame(const std::string& contentTopic,
+                                     const std::string& payloadHex);
+
+    // Returns and clears the accumulated `RlnPublishRequested` frames as a
+    // JSON array of {contentTopic, payloadHex}. Empty array when nothing
+    // pending.
+    StdLogosResult drainCoordBacklog();
+
+    // Returns and clears the accumulated `IncomingMixMessage` payloads for
+    // any codec mounted via `mountReceiver`, as a JSON array of
+    // {proto, payloadHex}. Empty array when nothing pending.
+    StdLogosResult drainReceivedMessages();
 
     // Mix-node inventory ---------------------------------------------------
     StdLogosResult listMixPeers();
@@ -121,4 +167,14 @@ public:
     // dispatch, but our sync-over-async waiter would race if two ops queued
     // simultaneously and their replies interleaved into the same promise.
     std::mutex m_callMutex;
+
+    // Backlog storage for pull-based event consumption (drainCoordBacklog /
+    // drainReceivedMessages). Event trampolines fire from the nim-ffi
+    // dispatch thread; the drain methods run on the caller thread. Guarded
+    // by their own mutex so the guarded regions don't nest with m_callMutex.
+    struct CoordBacklogEntry { std::string contentTopic; std::vector<uint8_t> payload; };
+    struct InboxEntry        { std::string proto;        std::vector<uint8_t> payload; };
+    std::mutex m_backlogMutex;
+    std::vector<CoordBacklogEntry> m_coordBacklog;
+    std::vector<InboxEntry>        m_inbox;
 };
