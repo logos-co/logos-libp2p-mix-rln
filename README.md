@@ -23,14 +23,13 @@ on [zerokit PR #436][zerokit-pr] — filed as draft, not for merge; see the
 PR for why), the module build also needs to plumb those overrides through:
 
 ```sh
-nix build .#lgx \
-  --override-input libp2p-mix-rln/zerokit path:/path/to/zerokit-v2-fork \
-  --override-input libp2p-mix-rln/zerokit/nixpkgs 'github:NixOS/nixpkgs?rev=cd648d6ea62bc0ffba91e61fcfe5e33c1e2004b1'
+nix build .#lgx
 ```
 
-The zerokit-v2 fork just needs the two nix packaging changes in the PR
-(add the `rln-stateless` output; pass `--no-default-features` when
-`features` is set).
+The FFI facade pins the [zerokit fork branch][zerokit-fork] that carries
+PR #436 as its default `zerokit` input, so no overrides are needed. Once
+those packaging changes land upstream, the pin flips back to
+`vacp2p/zerokit`.
 
 ## Tests
 
@@ -46,9 +45,7 @@ Loads the module under a live `logoscore` daemon, drives the lifecycle
 (`createNode → start → getNodeInfo → stop`), asserts error handling:
 
 ```sh
-nix run .#standalone-e2e \
-  --override-input libp2p-mix-rln/zerokit path:/path/to/zerokit-v2-fork \
-  --override-input libp2p-mix-rln/zerokit/nixpkgs 'github:NixOS/nixpkgs?rev=cd648d6ea62bc0ffba91e61fcfe5e33c1e2004b1'
+nix run .#standalone-e2e
 ```
 
 ### Multi-node end-to-end (5 daemons, Sphinx + RLN)
@@ -60,9 +57,7 @@ message from node 0 to node 4 through the exit-is-dest path, and verifies
 the payload byte-for-byte on the receiver's inbox:
 
 ```sh
-nix run .#multi-node-e2e \
-  --override-input libp2p-mix-rln/zerokit path:/path/to/zerokit-v2-fork \
-  --override-input libp2p-mix-rln/zerokit/nixpkgs 'github:NixOS/nixpkgs?rev=cd648d6ea62bc0ffba91e61fcfe5e33c1e2004b1'
+nix run .#multi-node-e2e
 ```
 
 Expected tail:
@@ -148,3 +143,4 @@ logos-libp2p-mix-rln/
 [upstream-issues]: https://github.com/logos-co/nim-libp2p-mix-rln-ffi/blob/main/UPSTREAM_ISSUES.md
 [builder]: https://github.com/logos-co/logos-module-builder
 [zerokit-pr]: https://github.com/vacp2p/zerokit/pull/436
+[zerokit-fork]: https://github.com/richard-ramos/zerokit/tree/nix-rln-stateless
