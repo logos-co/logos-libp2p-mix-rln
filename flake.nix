@@ -1,5 +1,5 @@
 {
-  description = "Logos Mixnet Module (libp2p + Mix + RLN)";
+  description = "Logos Mixnet Module (Delivery + Mix + RLN)";
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
@@ -8,7 +8,8 @@
     # it currently requires the two zerokit v2 overrides its README documents
     # (blocked on zerokit PR #436) — see this repo's README for the full
     # command.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi";
+    # Pin the Delivery-backed facade directly while its draft PR is pending.
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi/8afb97093979aab85fc6e727f95871eaf978e25d";
 
     # For `nix run .#standalone-e2e`. Kept out-of-tree because they only
     # matter for the runtime e2e; unit tests / library builds don't need them.

@@ -60,7 +60,6 @@ public:
     // Known event names:
     //   "IncomingMixMessage" — {protocol, payload_b64, surb_b64?}
     //   "RlnMembershipRegistered" — {index, root}
-    //   "RlnPublishRequested" — {contentTopic, payload_b64}
     std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
     // Health / status ------------------------------------------------------
@@ -120,19 +119,6 @@ public:
     // `drainReceivedMessages`. Pairs with `sendMixMessage(isExitDest=true)`.
     StdLogosResult mountReceiver(const std::string& codec, int64_t maxSize);
 
-    // RLN coordination -----------------------------------------------------
-    // Hosts observe outgoing coord traffic via the `RlnPublishRequested`
-    // event, OR (for shell-driven orchestration) pull from
-    // `drainCoordBacklog` and forward each frame to every peer's
-    // `deliverCoordFrame`. Same semantics either way.
-    StdLogosResult deliverCoordFrame(const std::string& contentTopic,
-                                     const std::string& payloadHex);
-
-    // Returns and clears the accumulated `RlnPublishRequested` frames as a
-    // JSON array of {contentTopic, payloadHex}. Empty array when nothing
-    // pending.
-    StdLogosResult drainCoordBacklog();
-
     // Returns and clears the accumulated `IncomingMixMessage` payloads for
     // any codec mounted via `mountReceiver`, as a JSON array of
     // {proto, payloadHex}. Empty array when nothing pending.
@@ -168,13 +154,10 @@ public:
     // simultaneously and their replies interleaved into the same promise.
     std::mutex m_callMutex;
 
-    // Backlog storage for pull-based event consumption (drainCoordBacklog /
-    // drainReceivedMessages). Event trampolines fire from the nim-ffi
-    // dispatch thread; the drain methods run on the caller thread. Guarded
-    // by their own mutex so the guarded regions don't nest with m_callMutex.
-    struct CoordBacklogEntry { std::string contentTopic; std::vector<uint8_t> payload; };
+    // Incoming-message events fire from the nim-ffi dispatch thread; the
+    // drain method runs on the caller thread. Guarded separately so the
+    // guarded regions don't nest with m_callMutex.
     struct InboxEntry        { std::string proto;        std::vector<uint8_t> payload; };
     std::mutex m_backlogMutex;
-    std::vector<CoordBacklogEntry> m_coordBacklog;
     std::vector<InboxEntry>        m_inbox;
 };

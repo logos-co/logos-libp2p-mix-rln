@@ -1,6 +1,6 @@
 # logos-libp2p-mix-rln
 
-Logos Core module implementing [LIP LOGOS-MIXNET][lip]: a libp2p-based
+Logos Core module implementing [LIP LOGOS-MIXNET][lip]: a Delivery-backed
 mixnet using Sphinx routing with per-hop RLN rate limiting.
 
 Sibling module to [`logos-libp2p-module`][libp2p-module]; shares its
@@ -51,8 +51,8 @@ nix run .#standalone-e2e
 ### Multi-node end-to-end (5 daemons, Sphinx + RLN)
 
 Spawns N=5 independent `logoscore` daemons (each under its own `HOME`),
-cross-registers peer records, syncs RLN memberships by shuttling coord
-frames in shell, mounts a receiver protocol on the exit, sends a mix
+cross-registers peer records, syncs RLN memberships over Delivery Relay,
+mounts a receiver protocol on the exit, sends a mix
 message from node 0 to node 4 through the exit-is-dest path, and verifies
 the payload byte-for-byte on the receiver's inbox:
 
@@ -104,10 +104,6 @@ under `namespace lip_mixnet` and are not configurable.
   pool populated by `addMixPeer`. Real deployment needs Logos Service
   Discovery integration (Extensible Peer Records per LIP LOGOS-MIXNET) so
   peers are found without shell-orchestrated cross-registration.
-- RLN coord: `deliverCoordFrame` / `drainCoordBacklog` is the pull-based
-  path used by the multi-node test. The event-driven path
-  (`onRlnPublishRequested` → host forwards) is wired but not exercised
-  end-to-end; a real host binding it to the RLN Relay pubsub topic is TBD.
 - `sendMixSurbReply` — stubbed pending reply-store lookup upstream.
 - `getNodeInfo(RlnMembershipIndex)` — stubbed pending group-manager
   accessor upstream.
