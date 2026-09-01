@@ -317,25 +317,6 @@ static void onRlnMembershipRegistered(const RlnMembershipRegisteredEvent* evt, v
     });
 }
 
-static void onRlnPublishRequested(const RlnPublishRequestedEvent* evt, void* ud) {
-    auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
-    if (!evt || !self) return;
-    std::string topic(evt->contentTopic.data ? evt->contentTopic.data : "",
-                      evt->contentTopic.data ? evt->contentTopic.len : 0);
-    std::vector<uint8_t> payload(evt->payload.data,
-                                 evt->payload.data + evt->payload.len);
-    hostEmit(self, "RlnPublishRequested", {
-        {"contentTopic", topic},
-        {"payload",      payload},
-    });
-    // Same pull-style buffering so a shell orchestrator can ferry frames
-    // between logoscore daemons via `drainCoordBacklog` + `deliverCoordFrame`.
-    {
-        std::lock_guard<std::mutex> lk(self->m_backlogMutex);
-        self->m_coordBacklog.push_back({std::move(topic), std::move(payload)});
-    }
-}
-
 } // namespace  (closes the file-scope anonymous namespace opened above the
   // FfiConfigBundle / cb* / on* helpers)
 
@@ -410,7 +391,6 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
     // event trampolines can find us.
     libp2p_mix_rln_ctx_add_on_incoming_mix_message_listener(m_ctx, onIncomingMixMessage, this);
     libp2p_mix_rln_ctx_add_on_rln_membership_registered_listener(m_ctx, onRlnMembershipRegistered, this);
-    libp2p_mix_rln_ctx_add_on_rln_publish_requested_listener(m_ctx, onRlnPublishRequested, this);
 
     return {true, json{{"created", true}}, ""};
 }
@@ -774,50 +754,6 @@ StdLogosResult Libp2pMixRlnModuleImpl::mountReceiver(
     return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
 }
 
-StdLogosResult Libp2pMixRlnModuleImpl::deliverCoordFrame(
-    const std::string& contentTopic, const std::string& payloadHex)
-{
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    if (!m_ctx) return {false, {}, "deliverCoordFrame: node not created"};
-
-    bool ok = false;
-    auto payload = hexDecodeStr(payloadHex, ok);
-    if (!ok) return {false, {}, "deliverCoordFrame: invalid payloadHex"};
-
-    RlnCoordFrame frame{};
-    frame.contentTopic = NimFfiStr{const_cast<char*>(contentTopic.c_str()),
-                                   contentTopic.size()};
-    frame.data.data    = payload.data();
-    frame.data.len     = payload.size();
-
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_deliver_coord_frame(m_ctx, &frame, cbBool, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "deliverCoordFrame");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "deliverCoordFrame: " + r.message};
-    return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
-}
-
-StdLogosResult Libp2pMixRlnModuleImpl::drainCoordBacklog() {
-    std::vector<CoordBacklogEntry> drained;
-    {
-        std::lock_guard<std::mutex> lk(m_backlogMutex);
-        drained.swap(m_coordBacklog);
-    }
-    nlohmann::json arr = nlohmann::json::array();
-    for (const auto& e : drained) {
-        arr.push_back({
-            {"contentTopic", e.contentTopic},
-            {"payloadHex",   hexEncodeBytes(e.payload.data(), e.payload.size())},
-        });
-    }
-    return {true, arr, ""};
-}
-
 StdLogosResult Libp2pMixRlnModuleImpl::drainReceivedMessages() {
     std::vector<InboxEntry> drained;
     {
@@ -871,4 +807,3 @@ LogosMap Libp2pMixRlnModuleImpl::collectMetrics() {
     // Prometheus-shape JSON into a LogosMap of counters.
     return {};
 }
-

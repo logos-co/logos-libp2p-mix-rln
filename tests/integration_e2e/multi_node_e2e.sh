@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Runs N libp2p_mix_rln_module instances under N separate logoscore daemons
 # and drives a real Sphinx-routed mix message from node 0 to node N-1 through
-# the daemon-facing CLI. Bridges the RLN coord channel across daemons in
-# shell — each daemon's coord backlog is drained and forwarded into every
-# other daemon's DeliverCoordFrame. This is the C++ / logoscore analog of
-# nim-libp2p-mix-rln's `smoketest_3node_ffi.c`.
+# the daemon-facing CLI. Delivery Relay propagates RLN coordination between
+# the daemons. This is the C++ / logoscore analog of nim-libp2p-mix-rln-ffi's
+# `smoketest_5node_ffi.c`.
 #
 # Required env: LIBP2P_MIX_RLN_LGX_DIR
 # Optional env: LOGOSCORE_BIN, LGPM_BIN, N (mix nodes, default 5), CODEC
@@ -146,40 +145,19 @@ done
 echo "  ${N}×$((N - 1)) peers cross-registered"
 
 # =======================================================================
-# RLN membership: register each + shuttle coord frames between daemons.
-# Each daemon's plugin publishes membership frames on registerRlnMembership;
-# we pull them via drainCoordBacklog and forward into every other daemon's
-# deliverCoordFrame. After all N are registered every plugin's Merkle tree
-# contains every commitment.
+# RLN membership: Delivery Relay propagates each registration to the other
+# daemons over the connections established by addMixPeer.
 # =======================================================================
 
-drain_and_broadcast() {
-    local origin="$1"
-    local frames rows n
-    frames=$(call "$origin" drainCoordBacklog | jq -c '.result.value')
-    n=$(jq -r 'length' <<<"$frames")
-    (( n > 0 )) || return 0
-    for k in $(seq 0 $((n - 1))); do
-        local topic hex
-        topic=$(jq -r ".[$k].contentTopic" <<<"$frames")
-        hex=$(jq   -r ".[$k].payloadHex"   <<<"$frames")
-        for j in $(seq 0 $((N - 1))); do
-            [[ "$j" == "$origin" ]] && continue
-            success "$j" deliverCoordFrame "$topic" "$hex" || {
-                echo "WARN: deliverCoordFrame node $j <- node $origin frame $k failed" >&2
-            }
-        done
-    done
-}
-
 echo "----- registering RLN memberships -----"
+sleep 2
 for i in $(seq 0 $((N - 1))); do
     if ! success "$i" registerRlnMembership; then
         echo "FAIL: registerRlnMembership node $i" >&2; fail=1; break
     fi
-    drain_and_broadcast "$i"
 done
 (( fail == 0 )) || exit 1
+sleep 2
 echo "  memberships registered and synced"
 
 # =======================================================================
