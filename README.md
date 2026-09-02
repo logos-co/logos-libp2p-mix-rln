@@ -94,22 +94,20 @@ under `namespace lip_mixnet` and are not configurable.
 - [zerokit PR #436][zerokit-pr] — draft, will land against v2.x once
   someone signs off. Longer-term, the whole facade needs a v3 migration
   because master (v3.0.0) removed the `stateless` feature entirely.
-- Publish [`nim-libp2p-mix-rln-ffi`][nim-facade] as public — done.
-- See [`nim-libp2p-mix-rln-ffi/UPSTREAM_ISSUES.md`][upstream-issues] for
-  the smaller nim-libp2p / mix / mix-rln API gaps that force the facade
-  to keep private wrappers.
 
 **Module-level**
 - Discovery: `listMixPeers` currently returns from the in-process node
   pool populated by `addMixPeer`. Real deployment needs Logos Service
   Discovery integration (Extensible Peer Records per LIP LOGOS-MIXNET) so
   peers are found without shell-orchestrated cross-registration.
-- `sendMixSurbReply` — stubbed pending reply-store lookup upstream.
-- `getNodeInfo(RlnMembershipIndex)` — stubbed pending group-manager
-  accessor upstream.
-- Cover traffic rate is stored but scheduler propagation is a no-op.
+- RLN membership announcements are still best effort. Production use needs
+  distributed index allocation, reliable dissemination, and late-join
+  history synchronization.
 - CI: the e2e apps run locally only; a GitHub Actions workflow guarding
   them against regressions is TBD.
+
+SURB replies, RLN membership-index lookup, live cover-rate updates, and
+TCP/QUIC transport selection are implemented and covered by the facade smoke test.
 
 ## Layout
 

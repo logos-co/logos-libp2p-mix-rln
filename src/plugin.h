@@ -98,6 +98,10 @@ public:
                                           const std::string& proto,
                                           const std::vector<uint8_t>& payload);
 
+    StdLogosResult sendMixMessageToExitWithSurb(const std::string& destPeerId,
+                                                const std::string& proto,
+                                                const std::vector<uint8_t>& payload);
+
     StdLogosResult sendMixSurbReply(const std::vector<uint8_t>& surb,
                                     const std::vector<uint8_t>& payload);
 
@@ -121,7 +125,7 @@ public:
 
     // Returns and clears the accumulated `IncomingMixMessage` payloads for
     // any codec mounted via `mountReceiver`, as a JSON array of
-    // {proto, payloadHex}. Empty array when nothing pending.
+    // {proto, payloadHex, surbHex}. Empty array when nothing pending.
     StdLogosResult drainReceivedMessages();
 
     // Mix-node inventory ---------------------------------------------------
@@ -157,7 +161,11 @@ public:
     // Incoming-message events fire from the nim-ffi dispatch thread; the
     // drain method runs on the caller thread. Guarded separately so the
     // guarded regions don't nest with m_callMutex.
-    struct InboxEntry        { std::string proto;        std::vector<uint8_t> payload; };
+    struct InboxEntry {
+        std::string proto;
+        std::vector<uint8_t> payload;
+        std::vector<uint8_t> surb;
+    };
     std::mutex m_backlogMutex;
     std::vector<InboxEntry>        m_inbox;
 };
