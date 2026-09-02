@@ -105,7 +105,7 @@ for i in $(seq 0 $((N - 1))); do
     start_daemon "$i"
     DAEMON_PORTS[$i]=$(( 49152 + RANDOM % 16384 ))
     cfg=$(jq -nc --arg addr "/ip4/127.0.0.1/tcp/${DAEMON_PORTS[$i]}" \
-        '{addrs:[$addr], transport:"tcp"}')
+        '{addrs:[$addr], transport:"tcp", mix:{cover:{rateFraction:0.01}}}')
     if ! success "$i" createNode "$cfg"; then
         echo "FAIL: createNode on node $i" >&2; fail=1; break
     fi
@@ -155,6 +155,7 @@ for i in $(seq 0 $((N - 1))); do
     if ! success "$i" registerRlnMembership; then
         echo "FAIL: registerRlnMembership node $i" >&2; fail=1; break
     fi
+    sleep 1
 done
 (( fail == 0 )) || exit 1
 sleep 2

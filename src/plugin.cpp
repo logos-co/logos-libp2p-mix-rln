@@ -240,7 +240,14 @@ static void cbMembership(int ec, const RlnMembershipStatus* reply, const char* e
 static void cbMixSend(int ec, const MixSendResponse* reply, const char* em, void* ud) {
     auto* p = static_cast<std::promise<SyncResult>*>(ud);
     SyncResult r = baseReply(ec, em);
-    if (r.ok && reply) r.boolValue = reply->ok;
+    if (r.ok && reply) {
+        std::vector<uint8_t> replyBytes;
+        if (reply->reply.data && reply->reply.len > 0) {
+            replyBytes.assign(reply->reply.data, reply->reply.data + reply->reply.len);
+        }
+        r.boolValue = reply->ok;
+        r.jsonValue = {{"ok", reply->ok}, {"reply", std::move(replyBytes)}};
+    }
     finish(p, std::move(r));
 }
 
@@ -294,17 +301,21 @@ static void onIncomingMixMessage(const IncomingMixMessageEvent* evt, void* ud) {
                       evt->proto.data ? evt->proto.len : 0);
     std::vector<uint8_t> payload(evt->payload.data,
                                  evt->payload.data + evt->payload.len);
+    std::vector<uint8_t> surb;
+    if (evt->surb.data && evt->surb.len > 0) {
+        surb.assign(evt->surb.data, evt->surb.data + evt->surb.len);
+    }
     // Push-style: fire the host callback if one is registered.
     hostEmit(self, "IncomingMixMessage", {
         {"proto",   proto},
         {"payload", payload},
-        {"surb",    std::vector<uint8_t>(evt->surb.data, evt->surb.data + evt->surb.len)},
+        {"surb",    surb},
     });
     // Pull-style: buffer for `drainReceivedMessages` (used by shell-driven
     // orchestration that can't subscribe to events).
     {
         std::lock_guard<std::mutex> lk(self->m_backlogMutex);
-        self->m_inbox.push_back({std::move(proto), std::move(payload)});
+        self->m_inbox.push_back({std::move(proto), std::move(payload), std::move(surb)});
     }
 }
 
@@ -526,7 +537,7 @@ static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
     }
     auto r = awaitPromise(f, kDefaultOpTimeoutMs + 5000);
     if (!r.ok) return {false, {}, "sendMixMessage: " + r.message};
-    return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
+    return {true, std::move(r.jsonValue), ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessage(const std::string& destPeerId,
@@ -553,6 +564,15 @@ StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageWithSurb(const std::string&
     std::lock_guard<std::mutex> lk(m_callMutex);
     return submitMixSend(m_ctx, destPeerId, destMultiaddr, proto, payload,
                          /*expectReply=*/true, /*isExitDest=*/false, cbMixSend);
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageToExitWithSurb(
+    const std::string& destPeerId,
+    const std::string& proto,
+    const std::vector<uint8_t>& payload) {
+    std::lock_guard<std::mutex> lk(m_callMutex);
+    return submitMixSend(m_ctx, destPeerId, /*destMultiaddr=*/{}, proto, payload,
+                         /*expectReply=*/true, /*isExitDest=*/true, cbMixSend);
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixSurbReply(const std::vector<uint8_t>& surb,
@@ -765,6 +785,7 @@ StdLogosResult Libp2pMixRlnModuleImpl::drainReceivedMessages() {
         arr.push_back({
             {"proto",      e.proto},
             {"payloadHex", hexEncodeBytes(e.payload.data(), e.payload.size())},
+            {"surbHex",    hexEncodeBytes(e.surb.data(), e.surb.size())},
         });
     }
     return {true, arr, ""};

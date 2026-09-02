@@ -9,7 +9,7 @@
     # (blocked on zerokit PR #436) — see this repo's README for the full
     # command.
     # Pin the Delivery-backed facade directly while its draft PR is pending.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi/83b47fcff41fedc5f6f143bac16940212c7ad1cf";
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi/9d8e4c2ef66f68ac6d7545f7ee12ac6910329e30";
 
     # For `nix run .#standalone-e2e`. Kept out-of-tree because they only
     # matter for the runtime e2e; unit tests / library builds don't need them.
