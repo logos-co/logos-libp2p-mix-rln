@@ -58,8 +58,8 @@ public:
 
     // Set by the codegen glue after construction so the impl can push events.
     // Known event names:
-    //   "IncomingMixMessage" — {protocol, payload_b64, surb_b64?}
-    //   "RlnMembershipRegistered" — {index, root}
+    //   "IncomingMixMessage" — {proto, payload: byte[], surb: byte[]}
+    //   "RlnMembershipRegistered" — {index, root: byte[]}
     std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
     // Health / status ------------------------------------------------------
