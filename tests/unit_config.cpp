@@ -20,13 +20,14 @@ namespace cfg = libp2p_mix_rln_config;
 
 LOGOS_TEST(defaults_match_lip_mixnet) {
     Libp2pMixRlnModuleOptions o;
-    // LIP LOGOS-MIXNET fixes the cover-traffic ratio and RLN root window.
+    // LIP LOGOS-MIXNET fixes the cover-traffic ratio.
     LOGOS_ASSERT_EQ(o.mix.coverRateFraction, 0.7);
-    LOGOS_ASSERT_EQ(o.rln.acceptableRootWindowSize, 5);
+    LOGOS_ASSERT_FALSE(o.mix.allowSend);
+    LOGOS_ASSERT_FALSE(o.mix.allowExit);
+    LOGOS_ASSERT_EQ(o.maxConnsPerPeer, 2);
     // The RLN Relay coord topics have placeholder defaults until the spec pins them.
     LOGOS_ASSERT_EQ(o.rln.membershipContentTopic, std::string("/mix/rln/membership/v1"));
     LOGOS_ASSERT_EQ(o.rln.proofMetadataContentTopic, std::string("/mix/rln/metadata/v1"));
-    LOGOS_ASSERT_EQ(o.discovery.serviceId, std::string("logos.mixnet"));
 }
 
 LOGOS_TEST(from_json_overlays_nested_sections) {
@@ -39,8 +40,7 @@ LOGOS_TEST(from_json_overlays_nested_sections) {
             "keystorePath": "/tmp/ks.json",
             "epochDurationSeconds": 10,
             "membershipContentTopic": "/mix/rln/membership/v2"
-        },
-        "discovery": { "serviceId": "logos.mixnet.staging" }
+        }
     })";
     bool ok = false;
     std::string err;
@@ -53,7 +53,6 @@ LOGOS_TEST(from_json_overlays_nested_sections) {
     LOGOS_ASSERT_EQ(o.rln.keystorePath, std::string("/tmp/ks.json"));
     LOGOS_ASSERT_EQ(o.rln.epochDurationSeconds, 10);
     LOGOS_ASSERT_EQ(o.rln.membershipContentTopic, std::string("/mix/rln/membership/v2"));
-    LOGOS_ASSERT_EQ(o.discovery.serviceId, std::string("logos.mixnet.staging"));
 }
 
 LOGOS_TEST(from_json_rejects_malformed) {
@@ -69,4 +68,24 @@ LOGOS_TEST(load_reads_env_inline_json) {
     ScopedModuleConfig s(R"({"maxConnections": 77})");
     auto o = Libp2pMixRlnModuleOptions::load();
     LOGOS_ASSERT_EQ(o.maxConnections, 77);
+}
+
+LOGOS_TEST(endpoint_roles_are_independent_opt_ins) {
+    bool ok = false;
+    auto sender = Libp2pMixRlnModuleOptions::fromJson(
+        R"({"mix":{"allowSend":true}})", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    LOGOS_ASSERT_TRUE(sender.mix.allowSend);
+    LOGOS_ASSERT_FALSE(sender.mix.allowExit);
+    auto exit = Libp2pMixRlnModuleOptions::fromJson(
+        R"({"mix":{"allowExit":true}})", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    LOGOS_ASSERT_FALSE(exit.mix.allowSend);
+    LOGOS_ASSERT_TRUE(exit.mix.allowExit);
+    Libp2pMixRlnModuleOptions::fromJson(
+        R"({"mix":{"allowSend":"true"}})", ok);
+    LOGOS_ASSERT_FALSE(ok);
+    Libp2pMixRlnModuleOptions::fromJson(
+        R"({"mix":{"allowExit":1}})", ok);
+    LOGOS_ASSERT_FALSE(ok);
 }

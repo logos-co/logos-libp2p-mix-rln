@@ -5,7 +5,6 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -26,6 +25,8 @@ inline constexpr const char* kCoverStrategy = "constant_rate";
 enum class TransportKind { Tcp, Quic };
 
 struct MixOptions {
+    bool allowSend = false;
+    bool allowExit = false;
     // Hex-encoded X25519 private key. Empty → generate on start.
     std::vector<uint8_t> mixPrivKey = {};
     // Cover-traffic rate ratio (LIP LOGOS-MIXNET: 0.7).
@@ -37,43 +38,29 @@ struct RlnOptions {
     std::string keystorePassword;
     std::string treePath;
     std::string rlnResourcesPath;
-    std::string rlnIdentifier;
 
     // LIP LOGOS-MIXNET marks these TBD. Placeholder defaults; MUST be pinned
     // before mainnet use.
     int epochDurationSeconds = 1;
-    int period = 1;
-    int messagingRate = 10;
     int maxEpochGap = 20;
     int userMessageLimit = 100;
-    int acceptableRootWindowSize = 5;
-    std::string stakedFund;
 
     std::string membershipContentTopic = "/mix/rln/membership/v1";
     std::string proofMetadataContentTopic = "/mix/rln/metadata/v1";
-    int coordCluster = 0;
-};
-
-struct DiscoveryOptions {
-    bool mountServiceDiscovery = true;
-    std::string serviceId = "logos.mixnet";
 };
 
 struct Libp2pMixRlnModuleOptions {
     // libp2p host options — mirror logos-libp2p-module's shape so the two
     // modules use the same vocabulary.
     std::vector<std::string> addrs = {};
-    std::vector<std::pair<std::string, std::vector<std::string>>> bootstrapNodes = {};
     TransportKind transport = TransportKind::Tcp;
     int maxConnections = 50;
-    int maxInConnections = 25;
-    int maxOutConnections = 25;
-    int maxConnsPerPeer = 1;
+    // Permit simultaneous inbound/outbound dials between routing peers.
+    int maxConnsPerPeer = 2;
     std::vector<uint8_t> privKey = {};
 
     MixOptions mix = {};
     RlnOptions rln = {};
-    DiscoveryOptions discovery = {};
 
     static Libp2pMixRlnModuleOptions load();
     static Libp2pMixRlnModuleOptions fromJson(const std::string& raw, bool& ok, std::string* err = nullptr);
@@ -129,6 +116,8 @@ inline TransportKind parseTransport(const nlohmann::json& j, TransportKind fallb
 }
 
 inline void applyMix(const nlohmann::json& j, MixOptions& m) {
+    m.allowSend = j.value("allowSend", m.allowSend);
+    m.allowExit = j.value("allowExit", m.allowExit);
     if (auto it = j.find("mixPrivKey"); it != j.end()) {
         if (!it->is_string()) throw std::invalid_argument("mix.mixPrivKey must be a string");
         m.mixPrivKey = decodeHex(it->get<std::string>());
@@ -143,48 +132,27 @@ inline void applyRln(const nlohmann::json& j, RlnOptions& r) {
     r.keystorePassword = j.value("keystorePassword", r.keystorePassword);
     r.treePath = j.value("treePath", r.treePath);
     r.rlnResourcesPath = j.value("rlnResourcesPath", r.rlnResourcesPath);
-    r.rlnIdentifier = j.value("rlnIdentifier", r.rlnIdentifier);
     r.epochDurationSeconds = j.value("epochDurationSeconds", r.epochDurationSeconds);
-    r.period = j.value("period", r.period);
-    r.messagingRate = j.value("messagingRate", r.messagingRate);
     r.maxEpochGap = j.value("maxEpochGap", r.maxEpochGap);
     r.userMessageLimit = j.value("userMessageLimit", r.userMessageLimit);
-    r.acceptableRootWindowSize = j.value("acceptableRootWindowSize", r.acceptableRootWindowSize);
-    r.stakedFund = j.value("stakedFund", r.stakedFund);
     r.membershipContentTopic = j.value("membershipContentTopic", r.membershipContentTopic);
     r.proofMetadataContentTopic = j.value("proofMetadataContentTopic", r.proofMetadataContentTopic);
-    r.coordCluster = j.value("coordCluster", r.coordCluster);
-}
-
-inline void applyDiscovery(const nlohmann::json& j, DiscoveryOptions& d) {
-    d.mountServiceDiscovery = j.value("mountServiceDiscovery", d.mountServiceDiscovery);
-    d.serviceId = j.value("serviceId", d.serviceId);
 }
 
 inline void apply(const nlohmann::json& j, Libp2pMixRlnModuleOptions& o) {
     if (!j.is_object()) return;
 
     o.addrs = j.value("addrs", o.addrs);
-    if (auto it = j.find("bootstrapNodes"); it != j.end() && it->is_array()) {
-        o.bootstrapNodes.clear();
-        for (const auto& n : *it) {
-            o.bootstrapNodes.emplace_back(n.value("peerId", std::string{}),
-                                          n.value("addrs", std::vector<std::string>{}));
-        }
-    }
     o.transport = parseTransport(j, o.transport);
     if (auto it = j.find("privKey"); it != j.end()) {
         if (!it->is_string()) throw std::invalid_argument("privKey must be a string");
         o.privKey = decodeHex(it->get<std::string>());
     }
     o.maxConnections = j.value("maxConnections", o.maxConnections);
-    o.maxInConnections = j.value("maxInConnections", o.maxInConnections);
-    o.maxOutConnections = j.value("maxOutConnections", o.maxOutConnections);
     o.maxConnsPerPeer = j.value("maxConnsPerPeer", o.maxConnsPerPeer);
 
     if (auto it = j.find("mix"); it != j.end() && it->is_object()) applyMix(*it, o.mix);
     if (auto it = j.find("rln"); it != j.end() && it->is_object()) applyRln(*it, o.rln);
-    if (auto it = j.find("discovery"); it != j.end() && it->is_object()) applyDiscovery(*it, o.discovery);
 }
 
 } // namespace libp2p_mix_rln_config

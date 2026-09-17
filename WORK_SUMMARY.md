@@ -1,296 +1,122 @@
-# Delivery-backed Mix-RLN integration: work summary
-
-Status captured on 2026-09-01.
-
-## Objective
-
-The goal of this work was to avoid shipping and operating two libp2p nodes when a Logos application uses both Mix-RLN and Logos Delivery.
-
-The original separation had two networking owners:
-
-- the Mix-RLN FFI/module stack created and managed its own libp2p switch;
-- Delivery created and managed another libp2p switch for Relay, Lightpush, peer management, and the other Delivery protocols.
-
-The implemented direction makes Delivery's `WakuNode` the networking owner. Mix and RLN coordination reuse the same Delivery switch and peer connections.
-
-```text
-logos-libp2p-mix-rln
-          |
-          v
-nim-libp2p-mix-rln-ffi
-          |
-          v
-Delivery WakuNode
-          |
-          +-- one libp2p Switch -- Waku Relay -- RLN coordination
-          |                   |
-          |                   +-- Waku Mix -- Sphinx payload routing
-          |                                      |
-          |                                      +-- injected Mix-RLN protection
-          |
-          +-- Delivery peer management and lifecycle
-```
-
-## Architectural decisions
-
-### Use Delivery instead of creating another libp2p node
-
-Mix is mounted on `WakuNode.switch`. RLN membership updates and proof metadata are carried as Delivery Relay messages. Mix payload routing, Relay coordination, peer dialing, and shutdown therefore share one switch and one node lifecycle.
-
-This removes the need for the host application to:
-
-- run a second libp2p node;
-- copy peer state between nodes;
-- subscribe to an RLN publication callback and manually forward coordination frames;
-- maintain a host-side backlog for coordination frames received before all FFI contexts are ready.
-
-### Keep the integration modular
-
-The Mix-RLN provider is injected through the existing Mix spam-protection interface. Delivery does not absorb the plugin's implementation. The provider remains a separate dependency with a clear boundary, while Delivery supplies transport, coordination, and lifecycle integration.
-
-### Preserve compatibility where practical
-
-The FFI C ABI remains unchanged. The former host-publish event and manual coordination-frame injection symbols remain available as compatibility paths, but the Delivery-backed integration no longer needs them.
-
-### Allow development before upstream merges
-
-The repositories use exact commit pins, so downstream work and end-to-end validation can continue while the upstream pull requests remain open. These pins must be updated to final merged revisions later.
-
-## Work completed by repository
-
-### Core Mix library
-
-[`logos-co/nim-libp2p-mix#58`](https://github.com/logos-co/nim-libp2p-mix/pull/58)
-completes the protocol primitives needed by downstream layers:
-
-- makes the constant-rate cover fraction mutable while the scheduler is running;
-- exposes received SURBs from exit connections;
-- sends replies through a supplied SURB;
-- updates a Mix node's advertised address after an ephemeral transport port is bound;
-- adds focused cover scheduler, SURB, and address-update tests.
-
-The signed PR head is `75f8bd5386f08ea909332774ddbeb78599b89d92`.
-
-### Mix-RLN spam-protection plugin
-
-[logos-co/mix-rln-spam-protection-plugin#22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) aligns the plugin's dependency graph with Delivery:
-
-- updates nim-libp2p to 2.3.1;
-- pins nim-libp2p-mix to Delivery's revision;
-- removes the conflicting duplicate libp2p resolution that prevented injection into Delivery's Mix instance.
-
-This PR changes dependency resolution, not plugin behavior.
-
-The plugin's existing membership-index accessor is now consumed by the FFI.
-The signed PR head is `2dee9aaa2214895805fded977543c2770db4dc16`.
-
-### Logos Delivery: spam-protection injection seam
-
-[logos-messaging/logos-delivery#4181](https://github.com/logos-messaging/logos-delivery/pull/4181) adds the generic injection point:
-
-- adds optional spam protection to `MixConf` and `MixConfBuilder`;
-- carries the instance through node construction and `mountMix`;
-- initializes the existing `WakuMix` on `node.switch` with the provider;
-- selects `SpamProtectionDelayStrategy` when protection is enabled so proof-generation time does not collapse short Mix delays into a timing signal;
-- preserves existing behavior when no provider is supplied.
-
-No second switch or node is created.
-
-### Logos Delivery: Mix-RLN adapter and coordination
-
-[logos-messaging/logos-delivery#4182](https://github.com/logos-messaging/logos-delivery/pull/4182), stacked on #4181, implements the Delivery-specific adapter:
-
-- constructs the Mix-RLN provider from optional programmatic configuration;
-- injects it into the existing `WakuMix` instance;
-- publishes membership updates and proof metadata as ephemeral, autosharded Waku messages over Delivery Relay;
-- listens for those coordination messages through `MessageSeenEvent` without replacing application handlers;
-- routes received coordination payloads into the plugin;
-- integrates provider initialization, startup, shutdown, and self-registration with the Delivery node lifecycle;
-- requires Relay and autosharding when Mix-RLN coordination is enabled;
-- adds configuration and integration-oriented test coverage;
-- adds the plugin to the reproducible Nimble and Nix dependency graph.
-
-### Logos Delivery: two-node E2E and CI repair
-
-[logos-messaging/logos-delivery#4185](https://github.com/logos-messaging/logos-delivery/pull/4185), stacked on #4182, adds the two-node Delivery integration test and fixes the issues exposed while running it.
-
-The test verifies that:
-
-- each Mix instance uses its `WakuNode`'s existing libp2p switch;
-- two RLN registrations propagate between Delivery nodes over Relay;
-- a proof with mismatched binding data is rejected;
-- the same proof with correct binding data is accepted;
-- proof metadata propagates to the other node;
-- reuse is rejected as a duplicate.
-
-Two test defects were corrected:
-
-- Relay, Mix, and coordination are now mounted before the Delivery node starts, matching the libp2p rule that protocols mounted on a running switch must already be started;
-- mismatched binding data is expected to produce an error result, matching the plugin's current verification contract.
-
-The initial #4185 CI runs also exposed non-reproducible dependency resolution:
-
-- `nim-snappy` version 0.1.0 tracks its moving `master` branch, so a clean install no longer matched the old lock revision;
-- Nimble 0.24.1 could retain Chronos 4.2.4 even though the generated supplemental requirements and lock expected 4.2.5.
-
-The repair:
-
-- pins `nim-snappy` to revision `a99d113197e81bf764a3b005b0ade3f9f3758069`;
-- pins the root Chronos constraint to 4.2.5;
-- updates `nimble.lock` checksums and revisions;
-- synchronizes the Nix dependency revision and hash.
-
-Follow-up work threads the cover-traffic fraction through Delivery's builder,
-factory, node, and `WakuMix` layers and pins the completed core/plugin APIs.
-Factory coverage verifies the configured value reaches the live Mix instance.
-
-The signed PR head is `8a254b7e136bf5ce9660ebf746f2ebe69bd54bd7`.
-
-### Mix-RLN FFI facade
-
-[logos-co/nim-libp2p-mix-rln-ffi#1](https://github.com/logos-co/nim-libp2p-mix-rln-ffi/pull/1) changes the FFI implementation from owning a separate libp2p node to owning a Delivery `WakuNode`:
-
-- removes the FFI-owned switch and separately assembled Mix-RLN provider;
-- uses Delivery's switch for Relay, Mix, peer connections, receivers, and lifecycle;
-- uses Delivery Relay for membership and proof-metadata coordination;
-- keeps the existing C lifecycle, peer, membership, and message APIs;
-- retains legacy coordination symbols for ABI compatibility;
-- pins Delivery PR #4185 at commit `8a254b7e136bf5ce9660ebf746f2ebe69bd54bd7`;
-- aligns the Nimble and hermetic Nix dependency graph with Delivery.
-
-The completed facade also:
-
-- accepts TCP and QUIC listen multiaddresses and selects matching peer addresses;
-- updates Mix with the actual bound address when port zero is requested;
-- exposes the plugin's real RLN membership index;
-- applies cover-rate changes to the running constant-rate scheduler;
-- extracts incoming SURBs, sends manual SURB replies, and returns reply payloads
-  from synchronous request/reply sends;
-- maps the public request timeout into the reply wait;
-- verifies these behaviors in one five-node C smoke test on TCP and QUIC.
-
-The signed PR head is `9d8e4c2ef66f68ac6d7545f7ee12ac6910329e30`.
-
-### Logos Mix-RLN module
-
-[logos-co/logos-libp2p-mix-rln#1](https://github.com/logos-co/logos-libp2p-mix-rln/pull/1) updates the Logos module to consume the Delivery-backed FFI:
-
-- pins FFI PR #1 at commit `9d8e4c2ef66f68ac6d7545f7ee12ac6910329e30`;
-- removes the host-side RLN publish callback;
-- removes the coordination backlog and manual frame-delivery path;
-- lets `addMixPeer` create Delivery-managed connections used by Relay coordination and Mix;
-- returns synchronous SURB reply bytes to the host;
-- exposes a SURB-capable exit-destination send;
-- preserves incoming SURBs in both push events and the pull inbox API;
-- updates documentation and the multi-node integration test for one Delivery-owned network node.
-
-The module build now generates 21 public methods.
-
-## Pull-request and pin topology
-
-```text
-Delivery #4181 ----------------------+
-                                     v
-Mix-RLN plugin #22 ------------> Delivery #4182 ---> Delivery #4185 <--- Core Mix #58
-                                                          |
-                                                          | exact commit pin
-                                                          v
-                                                   FFI facade PR #1
-                                                          |
-                                                          | exact commit pin
-                                                          v
-                                                   Logos module PR #1
-```
-
-Current PR state:
-
-| Repository | PR | State | Head commit |
-| --- | --- | --- | --- |
-| Core Mix | [#58](https://github.com/logos-co/nim-libp2p-mix/pull/58) | Draft | `75f8bd5386f08ea909332774ddbeb78599b89d92` |
-| Mix-RLN plugin | [#22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) | Open | `2dee9aaa2214895805fded977543c2770db4dc16` |
-| Delivery injection | [#4181](https://github.com/logos-messaging/logos-delivery/pull/4181) | Open | `a9d9bb1380fdfd034f92592b1519b5d7c74fc7cf` |
-| Delivery adapter | [#4182](https://github.com/logos-messaging/logos-delivery/pull/4182) | Draft | `5b8fbfedf0e649b518e5af75539c81fbd1710600` |
-| Delivery E2E | [#4185](https://github.com/logos-messaging/logos-delivery/pull/4185) | Draft | `8a254b7e136bf5ce9660ebf746f2ebe69bd54bd7` |
-| FFI facade | [#1](https://github.com/logos-co/nim-libp2p-mix-rln-ffi/pull/1) | Draft | `9d8e4c2ef66f68ac6d7545f7ee12ac6910329e30` |
-| Logos module | [#1](https://github.com/logos-co/logos-libp2p-mix-rln/pull/1) | Draft | This change |
-
-## Validation performed
-
-### Delivery dependency and integration checks
-
-- A clean dependency installation passed the lock audit: 48 of 48 packages matched `nimble.lock`.
-- The targeted two-node Mix-RLN Delivery test passed: 1 test run, 1 OK, 0 failed.
-- Proof generation, binding rejection, valid verification, metadata propagation, and duplicate rejection were observed at runtime.
-- `nimble.lock` JSON, Nix dependency generation, checksums, and `git diff --check` were validated.
-- #4185's refreshed CI passed Ubuntu build/tests, macOS build, Windows build, Android, both iOS targets, Docker, lint, API E2E, and nwaku interop.
-- The remaining failing `test-macos-15` job is also present on #4181 and #4182 and is not introduced by #4185.
-
-### FFI checks
-
-- The hermetic `.#cbind` build passed against the exact core, Delivery, and
-  plugin PR heads.
-- The five-node C API smoke passed on TCP and QUIC.
-- The smoke verified live cover-rate mutation, RLN membership-index lookup,
-  bound-port address updates, Sphinx routing, incoming SURB extraction, manual
-  SURB replies, and sender-side reply bytes.
-- The plain Mix routing and per-hop RLN routing derivations both passed.
-- The FFI pull request's C/C++ and Python CodeQL jobs passed.
-
-### Logos module checks
-
-- `nix build .#lgx` passed against the pinned FFI commit.
-- The generated Logos module exposes 21 methods.
-- The live single-daemon lifecycle and error-handling test passed.
-- The five-daemon multi-node E2E passed without shell-forwarding coordination frames.
-- Memberships synchronized through Delivery Relay.
-- A real Sphinx+RLN payload reached the receiver byte-for-byte.
-- The deterministic payload fixture uses a 1% cover rate. At the 70% protocol
-  default, the live scheduler saturated the proof pipeline and exceeded the
-  host call timeout.
-
-The repository's pre-existing generated `unit-tests` runner still produces an empty `bin/` derivation. That is separate from the module/FFI build and the successful runtime E2E.
-
-## Outcome
-
-The working stack now demonstrates the intended architecture:
-
-- one Delivery-owned libp2p node per application instance;
-- one switch shared by Relay and Mix;
-- Mix-RLN injected instead of compiled into a second networking stack;
-- RLN coordination transported by Delivery rather than by host callbacks;
-- downstream development unblocked through exact PR commit pins;
-- end-to-end membership synchronization and Sphinx+RLN delivery proven across multiple processes.
-
-Merging the Delivery PRs is not required to continue development while exact pins are used. It is required before the stack can replace draft commit pins with stable upstream references.
+# Standalone Mix-RLN module: current work summary
+
+Updated 2026-09-17. This document describes the current implementation and
+remaining work. See [README.md](README.md) for the detailed architecture,
+configuration, API, and deployment examples.
+
+## Architecture and behavior
+
+The module runs a standalone Mix intermediate node. Its Nim FFI owns a
+libp2p switch with core Mix and the bundled Mix-RLN spam-protection plugin.
+Sphinx payloads travel over IPv4 TCP or QUIC; zerokit provides the RLN
+cryptography. Logos Delivery is not a runtime dependency.
+
+Application endpoint capabilities are independent, create-time opt-ins:
+
+| Setting | Default | Enables |
+| --- | --- | --- |
+| `mix.allowSend` | `false` | Application sends and explicit SURB replies. |
+| `mix.allowExit` | `false` | Receiver mounting and local/external application exit delivery. |
+
+Intermediate forwarding and cover loops remain active with both options
+disabled. Exit policy is enforced by the receiving core node, independently
+of peer advertisements. Peer records carry `exitEnabled`, and route selection
+reserves an eligible exit before choosing intermediates. The standalone FFI
+sets the restrictive defaults explicitly; native core-library callers retain
+`allowExit=true` for compatibility.
+
+The host supplies two things:
+
+- **Peer records:** obtain `getLocalMixPeerRecord` from participating nodes and
+  install records with `addMixPeer`. `listMixPeers` reports the routing pool;
+  automatic discovery is not implemented.
+- **RLN coordination:** forward membership and proof-metadata frames from
+  `RlnPublishRequested` or `drainCoordBacklog` through a transport, then submit
+  received frames with `deliverCoordFrame`. Forwarding must continue after
+  initial membership registration.
+
+A separate Delivery module can provide that coordination transport, either
+as a Relay node or a light client using Lightpush/Filter service nodes.
+When used, Delivery and Mix have separate switches, peer IDs,
+peer sets, and lifecycles. Proof generation and verification stay inside the
+Mix-RLN plugin; there is no external RLN-module proof provider.
+
+## Active PRs and dependency pins
+
+PR status was checked on the update date. All changes below are pushed.
+
+| PR | Status | Purpose |
+| --- | --- | --- |
+| [Core Mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58) | Open, targets `master` | Exit policy and capability storage, shared route selection, cover control, SURB ownership/replies, and compatible dependencies. |
+| [Mix-RLN plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) | Draft | Align libp2p and core Mix dependencies with the standalone facade. |
+| [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436) | Draft | Provide the stateless RLN build and C ABI required by the plugin. |
+| [FFI #2](https://github.com/logos-co/nim-libp2p-mix-rln-ffi/pull/2) | Draft | Own the switch, enforce endpoint opt-ins, and expose host coordination and routing APIs. |
+| [Module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2) | Draft | Package the FFI, expose the Logos API, and document/test the standalone deployment. |
+
+Current consumed revisions:
+
+| Dependency | Revision |
+| --- | --- |
+| FFI, pinned by this module | `53f4e0b9905743301c57cb105ee66d14250b8397` |
+| Core Mix, pinned by both FFI and plugin | `57def1fef5763fc4cc27a386276cd65165eeb489` |
+| Mix-RLN plugin, pinned by FFI | `dc820fd676fa6c44c1e8847e29afcd2bc39200fe` |
+| Zerokit, locked by FFI | `a263930af8a7bd95804e1e49859050afbf2dbfd5` |
+| Delivery module v0.2.1, optional E2E only | `b8b9ac2f4667bc63644b2116f64a07aa30cfd3ef` |
+
+Core #58's head is `470177c7a377222d89621b32fdc5087de7350f7a`.
+Its final commit only refreshes core's `nix/deps.nix`; the FFI uses its own
+dependency snapshot and pins the preceding, validated runtime commit above.
+The published FFI revision evaluates to the same Nix library derivation used
+by the tested module package. A local FFI override is not required.
+
+[Delivery #4181](https://github.com/logos-messaging/logos-delivery/pull/4181)
+remains a separate draft for optional spam-protection injection. It is useful
+independently but is not a prerequisite for this module. The redundant
+[core #46](https://github.com/logos-co/nim-libp2p-mix/pull/46) experiment and the
+superseded Delivery adapter/test PRs
+[#4182](https://github.com/logos-messaging/logos-delivery/pull/4182) and
+[#4185](https://github.com/logos-messaging/logos-delivery/pull/4185) are closed,
+with explanations. None belongs in the merge path for the standalone stack.
+
+## Validation and compatibility
+
+The implementation was validated on 2026-09-17:
+
+| Check | Result and scope |
+| --- | --- |
+| Core unit tests | 165 passed. |
+| Core component tests | 33 passed, including local/external exit policy, forged advertisements, cover loops, and SURB ownership. |
+| Module configuration tests | Five passed using the Logos test-framework runner. |
+| Core Nix build | Passed after regenerating the dependency snapshot. |
+| Nim routing tests | Plain and RLN-protected routing passed. |
+| C API tests | TCP and QUIC passed: key validation, stable prefixed-key identity, address validation, peer listing, role restrictions, coordination, live cover updates, and SURB replies. |
+| Module package | `.lgx` build and single-daemon lifecycle/validation test passed. |
+| Five-daemon test | Peer listing, host-mediated membership synchronization, and Sphinx/RLN payload delivery passed with sender-only, intermediate-only, and exit-only roles. |
+| Delivery coordination E2E | Five separate Relay nodes passed membership and proof-metadata frames through real receive events into Mix. All 20 remote membership deliveries and the Sphinx/RLN application payload were verified; Mix and Delivery peer IDs were distinct. Dropping membership publications made the fixture fail before routing. |
+| Delivery light-client E2E | Five Delivery clients with Relay disabled used two separate Relay/Lightpush/Filter service nodes. Membership, proof metadata, and Mix payload delivery passed. Disabling Filter or removing the Relay link failed readiness before registration. |
+
+These are completed local checks, not a claim that every remote CI platform
+is green. `nix run .#delivery-coordination-e2e` and
+`nix run .#delivery-edge-coordination-e2e` exercise controlled local Relay and
+light-client coordination; the other fixtures use host test buses. This does
+not establish production synchronization or partition recovery. Routing fixtures
+use reduced cover rates and do not establish production performance at the default rate.
+
+The public configuration now contains only settings applied by the runtime.
+Unused discovery/bootstrap, inbound/outbound connection-limit, and RLN
+fields were removed. Direct C consumers must rebuild against the generated
+header because the configuration struct changed. Malformed configured
+private keys now fail creation instead of silently generating a new identity.
 
 ## Remaining work
 
-### Merge and repin the stack
-
-Recommended order:
-
-1. Merge the Mix-RLN dependency-alignment PR and Delivery #4181.
-2. Merge core Mix #58.
-3. Rebase and merge Delivery #4182.
-4. Rebase and merge Delivery #4185.
-5. Update the FFI pins to final merged revisions and regenerate its Nimble/Nix pins.
-6. Merge the FFI PR, repin the Logos module, and merge the module PR.
-
-The macOS test failure should be investigated independently because it reproduces below this stack.
-
-### Protocol completeness
-
-The current off-chain coordination is intentionally limited:
-
-- membership registration is sequential;
-- distributed member-index allocation is not implemented;
-- membership-history synchronization for late joiners is not implemented;
-- membership gossip is best effort.
-
-These limitations should be resolved before treating the off-chain membership mechanism as production-ready.
-
-### Additional coverage and productization
-
-- Add a full multi-hop Sphinx payload route to Delivery's own integration suite. The downstream five-daemon module E2E already covers this behavior, but #4185 focuses on Delivery coordination and proof handling.
-- Decide when the legacy FFI coordination symbols can be deprecated or removed.
-- Productize this standalone Logos mixnet module for deployable routing-only hops. It already uses a minimal Delivery node with Relay, Mix, and Mix-RLN; fleet operation still needs discovery/bootstrap and production coordination parameters.
+1. Merge core #58 and zerokit #436, then repin the plugin and merge #22.
+   Update the FFI's Nimble/Nix pins to merged revisions and merge FFI #2;
+   repin this module and merge module #2. Delivery PRs are outside this path.
+2. Provide production coordination: distributed membership-index allocation,
+   reliable publication, and membership-history synchronization for late
+   joiners. Current controlled setup registers members sequentially.
+3. Integrate host-managed discovery and validate the chosen coordination
+   backend under deployment conditions beyond the local Relay E2E.
+4. Validate sustained routing and proof-generation capacity at intended
+   deployment parameters, including the default cover rate.

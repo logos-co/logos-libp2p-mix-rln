@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Runs N libp2p_mix_rln_module instances under N separate logoscore daemons
 # and drives a real Sphinx-routed mix message from node 0 to node N-1 through
-# the daemon-facing CLI. Delivery Relay propagates RLN coordination between
-# the daemons. This is the C++ / logoscore analog of nim-libp2p-mix-rln-ffi's
-# `smoketest_5node_ffi.c`.
+# the daemon-facing CLI. A host test bus or optional Delivery Relay forwards
+# RLN coordination; intermediates mount no application receiver. This is the
+# C++ / logoscore analog of nim-libp2p-mix-rln-ffi's
+# `smoketest_3node_ffi.c`.
 #
 # Required env: LIBP2P_MIX_RLN_LGX_DIR
 # Optional env: LOGOSCORE_BIN, LGPM_BIN, N (mix nodes, default 5), CODEC
+# DELIVERY_LGX_DIR enables Delivery coordination (requires python3).
+# DELIVERY_MODE=edge uses light clients and two separate Relay service daemons.
 #
 # Multi-daemon isolation: logoscore keeps runtime state under
 # `~/.logoscore/`, so each daemon needs its own HOME. We spawn one per
@@ -32,6 +35,19 @@ pick_lgx() {
 }
 LGX="$(pick_lgx "$LIBP2P_MIX_RLN_LGX_DIR")"
 
+DELIVERY_LGX=""
+if [[ -n "${DELIVERY_LGX_DIR:-}" ]]; then
+    DELIVERY_LGX="$(pick_lgx "$DELIVERY_LGX_DIR")"
+fi
+: "${DELIVERY_MODE:=relay}"
+[[ "$DELIVERY_MODE" == relay || "$DELIVERY_MODE" == edge ]] || {
+    echo "DELIVERY_MODE must be relay or edge" >&2; exit 1;
+}
+if [[ "$DELIVERY_MODE" == edge && -z "$DELIVERY_LGX" ]]; then
+    echo "DELIVERY_MODE=edge requires DELIVERY_LGX_DIR" >&2; exit 1
+fi
+export DELIVERY_MODE
+COORD_PID=""
 ROOT="$(mktemp -d)"
 declare -a DAEMON_PIDS=()
 declare -a DAEMON_HOMES=()
@@ -39,6 +55,10 @@ declare -a DAEMON_PORTS=()
 
 cleanup() {
     local rc=$?
+    if [[ -n "$COORD_PID" ]]; then
+        kill "$COORD_PID" 2>/dev/null || true
+        wait "$COORD_PID" 2>/dev/null || true
+    fi
     if [[ "$rc" -ne 0 ]]; then
         for i in "${!DAEMON_HOMES[@]}"; do
             local log="${DAEMON_HOMES[$i]}/logs.txt"
@@ -71,16 +91,27 @@ wait_module_ready() {
 }
 
 start_daemon() {
-    local idx="$1"
+    local idx="$1" module="${2:-libp2p_mix_rln_module}"
     local home="$ROOT/node$idx"
     mkdir -p "$home/modules"
-    HOME="$home" "$LGPM_BIN" --modules-dir "$home/modules" --allow-unsigned \
-        install --file "$LGX" >/dev/null
+    if [[ "$module" == libp2p_mix_rln_module ]]; then
+        HOME="$home" "$LGPM_BIN" --modules-dir "$home/modules" --allow-unsigned \
+            install --file "$LGX" >/dev/null
+    fi
+    if [[ -n "$DELIVERY_LGX" ]]; then
+        HOME="$home" "$LGPM_BIN" --modules-dir "$home/modules" --allow-unsigned \
+            install --file "$DELIVERY_LGX" >/dev/null
+    fi
     HOME="$home" "$LOGOSCORE_BIN" -D -m "$home/modules" \
         > "$home/logs.txt" 2>&1 &
     DAEMON_PIDS[$idx]=$!
     DAEMON_HOMES[$idx]="$home"
-    wait_module_ready "$home" "libp2p_mix_rln_module" || return 1
+    if [[ "$module" == libp2p_mix_rln_module ]]; then
+        wait_module_ready "$home" "$module" || return 1
+    fi
+    if [[ -n "$DELIVERY_LGX" ]]; then
+        wait_module_ready "$home" "delivery_module" || return 1
+    fi
 }
 
 # ---------- convenience call wrapper -----------------------------------
@@ -105,7 +136,12 @@ for i in $(seq 0 $((N - 1))); do
     start_daemon "$i"
     DAEMON_PORTS[$i]=$(( 49152 + RANDOM % 16384 ))
     cfg=$(jq -nc --arg addr "/ip4/127.0.0.1/tcp/${DAEMON_PORTS[$i]}" \
-        '{addrs:[$addr], transport:"tcp", mix:{cover:{rateFraction:0.01}}}')
+        --argjson sender "$([[ "$i" == 0 ]] && echo true || echo false)" \
+        --argjson exit "$([[ "$i" == "$((N - 1))" ]] && echo true || echo false)" \
+        '{addrs:[$addr], transport:"tcp", mix:{allowSend:$sender,allowExit:$exit,cover:{rateFraction:0.01}}}')
+    if [[ -n "$DELIVERY_LGX" ]]; then
+        cfg=$(jq -c '.rln = {membershipContentTopic:"/mix/1/membership/proto",proofMetadataContentTopic:"/mix/1/metadata/proto"}' <<<"$cfg")
+    fi
     if ! success "$i" createNode "$cfg"; then
         echo "FAIL: createNode on node $i" >&2; fail=1; break
     fi
@@ -144,22 +180,64 @@ done
 (( fail == 0 )) || exit 1
 echo "  ${N}×$((N - 1)) peers cross-registered"
 
+for i in $(seq 0 $((N - 1))); do
+    resp=$(call "$i" listMixPeers)
+    if [[ "$(jq -r '.result.value.peers | length' <<<"$resp")" != "$((N - 1))" ]]; then
+        echo "FAIL: listMixPeers node $i does not match the routing pool" >&2
+        exit 1
+    fi
+done
+
 # =======================================================================
-# RLN membership: Delivery Relay propagates each registration to the other
-# daemons over the connections established by addMixPeer.
+# RLN membership: register each + shuttle coord frames between daemons.
+# Each daemon's plugin publishes membership frames on registerRlnMembership;
+# we pull them via drainCoordBacklog and forward into every other daemon's
+# deliverCoordFrame. After all N are registered every plugin's Merkle tree
+# contains every commitment.
 # =======================================================================
 
+drain_and_broadcast() {
+    local origin="$1"
+    local frames rows n
+    frames=$(call "$origin" drainCoordBacklog | jq -c '.result.value')
+    n=$(jq -r 'length' <<<"$frames")
+    (( n > 0 )) || return 0
+    for k in $(seq 0 $((n - 1))); do
+        local topic hex
+        topic=$(jq -r ".[$k].contentTopic" <<<"$frames")
+        hex=$(jq   -r ".[$k].payloadHex"   <<<"$frames")
+        for j in $(seq 0 $((N - 1))); do
+            [[ "$j" == "$origin" ]] && continue
+            success "$j" deliverCoordFrame "$topic" "$hex" || {
+                echo "FAIL: deliverCoordFrame node $j <- node $origin frame $k failed" >&2
+                return 1
+            }
+        done
+    done
+}
+
 echo "----- registering RLN memberships -----"
-sleep 2
-for i in $(seq 0 $((N - 1))); do
-    if ! success "$i" registerRlnMembership; then
-        echo "FAIL: registerRlnMembership node $i" >&2; fail=1; break
+if [[ -n "$DELIVERY_LGX" ]]; then
+    if [[ "$DELIVERY_MODE" == edge ]]; then
+        start_daemon "$N" delivery_module
+        start_daemon "$((N + 1))" delivery_module
     fi
-    sleep 1
-done
-(( fail == 0 )) || exit 1
-sleep 2
-echo "  memberships registered and synced"
+    export LOGOSCORE_BIN
+    python3 "${DELIVERY_COORDINATION_SCRIPT:-$(dirname "$0")/delivery_coordination.py}" "$ROOT" "$N" &
+    COORD_PID=$!
+    deadline=$(( SECONDS + 240 ))
+    until [[ -f "$ROOT/coord-ready" ]]; do
+        kill -0 "$COORD_PID" 2>/dev/null || { wait "$COORD_PID"; exit 1; }
+        (( SECONDS < deadline )) || { echo "FAIL: Delivery coordination setup timed out" >&2; exit 1; }
+        sleep 0.2
+    done
+else
+    for i in $(seq 0 $((N - 1))); do
+        success "$i" registerRlnMembership || { echo "FAIL: registerRlnMembership node $i" >&2; exit 1; }
+        drain_and_broadcast "$i"
+    done
+    echo "  memberships registered and synced"
+fi
 
 # =======================================================================
 # Mount receiver on node N-1; send from node 0 with isExitDest=true; poll
@@ -205,6 +283,12 @@ got_ascii=$(printf '%s' "$got_hex" | xxd -r -p 2>/dev/null || true)
 echo "  inbox: proto=$(jq -r '.[0].proto' <<<"$inbox") payload='$got_ascii'"
 if [[ "$got_hex" != "$want_hex" ]]; then
     echo "FAIL: payload mismatch; want_hex='$want_hex' got_hex='$got_hex'" >&2; exit 1
+fi
+
+if [[ -n "$COORD_PID" ]]; then
+    touch "$ROOT/coord-finish"
+    wait "$COORD_PID"
+    COORD_PID=""
 fi
 
 for i in $(seq 0 $((N - 1))); do
