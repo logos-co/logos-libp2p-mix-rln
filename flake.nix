@@ -1,5 +1,5 @@
 {
-  description = "Logos Mixnet Module (Delivery + Mix + RLN)";
+  description = "Logos Mix Intermediate Module (libp2p + Mix + RLN)";
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
@@ -8,13 +8,15 @@
     # it currently requires the two zerokit v2 overrides its README documents
     # (blocked on zerokit PR #436) — see this repo's README for the full
     # command.
-    # Pin the Delivery-backed facade directly while its draft PR is pending.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi/9d8e4c2ef66f68ac6d7545f7ee12ac6910329e30";
+    # Pin the standalone facade while its follow-up PR is under review.
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi/53f4e0b9905743301c57cb105ee66d14250b8397";
 
     # For `nix run .#standalone-e2e`. Kept out-of-tree because they only
     # matter for the runtime e2e; unit tests / library builds don't need them.
     logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
     package-manager.url = "github:logos-co/logos-package-manager";
+    # Test-only Relay backend (stable Delivery module v0.2.1).
+    delivery-module.url = "github:logos-co/logos-delivery-module/b8b9ac2f4667bc63644b2116f64a07aa30cfd3ef";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -79,10 +81,22 @@
             export LGPM_BIN="''${LGPM_BIN:-${lgpmBin}}"
             exec ${multiNodeE2eScript} "$@"
           '';
+          deliveryCoordinationE2eApp = pkgs.writeShellScript "delivery-coordination-e2e" ''
+            export PATH=${pkgs.lib.makeBinPath [ pkgs.python3 ]}:$PATH
+            export DELIVERY_LGX_DIR=${inputs.delivery-module.packages.${system}.lgx}
+            export DELIVERY_COORDINATION_SCRIPT=${./tests/integration_e2e/delivery_coordination.py}
+            exec ${multiNodeE2eApp} "$@"
+          '';
+          deliveryEdgeE2eApp = pkgs.writeShellScript "delivery-edge-coordination-e2e" ''
+            export DELIVERY_MODE=edge
+            exec ${deliveryCoordinationE2eApp} "$@"
+          '';
         in {
           apps = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             standalone-e2e = { type = "app"; program = toString standaloneE2eApp; };
             multi-node-e2e = { type = "app"; program = toString multiNodeE2eApp; };
+            delivery-coordination-e2e = { type = "app"; program = toString deliveryCoordinationE2eApp; };
+            delivery-edge-coordination-e2e = { type = "app"; program = toString deliveryEdgeE2eApp; };
           };
         }
       );

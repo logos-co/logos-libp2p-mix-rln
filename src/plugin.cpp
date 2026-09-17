@@ -2,7 +2,6 @@
 
 #include <cstdio>
 #include <cstring>
-#include <memory>
 #include <mutex>
 #include <pthread.h>
 #include <string>
@@ -81,124 +80,62 @@ void ensureNimMain() {
 }
 } // namespace
 
-// ---------------------------------------------------------------------------
-// FfiConfigBundle: assembles a MixRlnConfig whose views borrow into owned
-// strings/vectors inside the bundle. Non-movable so the storage doesn't
-// silently rebase and invalidate the views — construct on the heap.
-// File-scope rather than a class-nested type: it holds no observable state,
-// just marshalling scratch space, and keeping it private to plugin.cpp keeps
-// LIDL's codegen scan away from the FFI struct.
-// ---------------------------------------------------------------------------
-
 namespace {
-struct FfiConfigBundle {
-    // Storage layer — owned.
-    std::vector<std::string> addrs;
-    std::vector<NimFfiStr>   addrsFfi;
-    std::string privKeyHex;
-    std::string transport;
-    std::string mixPrivKeyHex;
-
-    std::string keystorePath;
-    std::string keystorePassword;
-    std::string treePath;
-    std::string rlnResourcesPath;
-    std::string rlnIdentifier;
-    std::string stakedFund;
-    std::string membershipContentTopic;
-    std::string proofMetadataContentTopic;
-    std::string serviceId;
-
-    // Empty for now; matches the Nim-side field with no producer.
-    std::vector<std::string> bootstrapPeerIds;
-    std::vector<NimFfiStr>   bootstrapPeerIdsFfi;
-
-    // Bundled view — populated in build().
-    MixRlnConfig cfg{};
-
-    FfiConfigBundle() = default;
-    FfiConfigBundle(FfiConfigBundle&&) = delete; // never move — views would dangle
-    FfiConfigBundle& operator=(FfiConfigBundle&&) = delete;
-    FfiConfigBundle(const FfiConfigBundle&) = delete;
-    FfiConfigBundle& operator=(const FfiConfigBundle&) = delete;
-};
-
-std::string hexEncode(const std::vector<uint8_t>& v) {
+std::string hexEncodeBytes(const uint8_t* data, size_t len) {
     std::string out;
-    out.reserve(v.size() * 2);
+    out.reserve(len * 2);
     static const char* hex = "0123456789abcdef";
-    for (auto b : v) {
-        out.push_back(hex[(b >> 4) & 0xF]);
-        out.push_back(hex[b & 0xF]);
+    for (size_t i = 0; i < len; i++) {
+        out.push_back(hex[(data[i] >> 4) & 0xF]);
+        out.push_back(hex[data[i] & 0xF]);
     }
     return out;
 }
 
-std::unique_ptr<FfiConfigBundle>
-buildFfiConfig(const Libp2pMixRlnModuleOptions& opts) {
-    auto bp = std::unique_ptr<FfiConfigBundle>(new FfiConfigBundle());
-    auto& b = *bp;
+// Views borrow from the immutable options and this non-movable scratch storage.
+// Both remain alive until the create request has been serialized.
+struct FfiConfigBundle {
+    std::vector<NimFfiStr> addrsFfi;
+    std::string privKeyHex;
+    std::string mixPrivKeyHex;
+    std::string transport;
+    std::string defaultAddr;
+    MixRlnConfig cfg{};
 
-    b.addrs      = opts.addrs;
-    if (b.addrs.empty()) {
-        b.addrs.push_back(opts.transport == TransportKind::Quic
-                              ? "/ip4/127.0.0.1/udp/0/quic-v1"
-                              : "/ip4/127.0.0.1/tcp/0");
+    explicit FfiConfigBundle(const Libp2pMixRlnModuleOptions& opts)
+        : privKeyHex(hexEncodeBytes(opts.privKey.data(), opts.privKey.size())),
+          mixPrivKeyHex(hexEncodeBytes(opts.mix.mixPrivKey.data(), opts.mix.mixPrivKey.size())),
+          transport(opts.transport == TransportKind::Quic ? "quic" : "tcp"),
+          defaultAddr(opts.transport == TransportKind::Quic
+                          ? "/ip4/127.0.0.1/udp/0/quic-v1" : "/ip4/127.0.0.1/tcp/0") {
+        for (const auto& addr : opts.addrs) addrsFfi.push_back(borrowStr(addr));
+        if (addrsFfi.empty()) addrsFfi.push_back(borrowStr(defaultAddr));
+        cfg.addrs.data           = addrsFfi.data();
+        cfg.addrs.len            = addrsFfi.size();
+        cfg.privKeyHex           = borrowStr(privKeyHex);
+        cfg.transport            = borrowStr(transport);
+        cfg.maxConnections       = opts.maxConnections;
+        cfg.maxConnsPerPeer      = opts.maxConnsPerPeer;
+
+        cfg.mix.mixPrivKeyHex     = borrowStr(mixPrivKeyHex);
+        cfg.mix.allowSend         = opts.mix.allowSend;
+        cfg.mix.allowExit         = opts.mix.allowExit;
+        cfg.mix.coverRateFraction = opts.mix.coverRateFraction;
+
+        cfg.rln.keystorePath              = borrowStr(opts.rln.keystorePath);
+        cfg.rln.keystorePassword          = borrowStr(opts.rln.keystorePassword);
+        cfg.rln.treePath                  = borrowStr(opts.rln.treePath);
+        cfg.rln.rlnResourcesPath          = borrowStr(opts.rln.rlnResourcesPath);
+        cfg.rln.epochDurationSeconds      = opts.rln.epochDurationSeconds;
+        cfg.rln.maxEpochGap               = opts.rln.maxEpochGap;
+        cfg.rln.userMessageLimit          = opts.rln.userMessageLimit;
+        cfg.rln.membershipContentTopic    = borrowStr(opts.rln.membershipContentTopic);
+        cfg.rln.proofMetadataContentTopic = borrowStr(opts.rln.proofMetadataContentTopic);
+
     }
-    b.addrsFfi.reserve(b.addrs.size());
-    for (const auto& a : b.addrs) b.addrsFfi.push_back(borrowStr(a));
-
-    b.privKeyHex    = hexEncode(opts.privKey);
-    b.transport     = (opts.transport == TransportKind::Quic) ? "quic" : "tcp";
-    b.mixPrivKeyHex = hexEncode(opts.mix.mixPrivKey);
-
-    b.keystorePath             = opts.rln.keystorePath;
-    b.keystorePassword         = opts.rln.keystorePassword;
-    b.treePath                 = opts.rln.treePath;
-    b.rlnResourcesPath         = opts.rln.rlnResourcesPath;
-    b.rlnIdentifier            = opts.rln.rlnIdentifier;
-    b.stakedFund               = opts.rln.stakedFund;
-    b.membershipContentTopic   = opts.rln.membershipContentTopic;
-    b.proofMetadataContentTopic = opts.rln.proofMetadataContentTopic;
-    b.serviceId                = opts.discovery.serviceId;
-
-    // Assemble the FFI struct. seq fields view into the vectors above.
-    b.cfg = MixRlnConfig{};
-    b.cfg.addrs.data           = b.addrsFfi.data();
-    b.cfg.addrs.len            = b.addrsFfi.size();
-    b.cfg.bootstrapPeerIds.data = b.bootstrapPeerIdsFfi.data();
-    b.cfg.bootstrapPeerIds.len  = b.bootstrapPeerIdsFfi.size();
-    // bootstrapMultiaddrs left empty — no host wiring yet.
-    b.cfg.privKeyHex           = borrowStr(b.privKeyHex);
-    b.cfg.transport            = borrowStr(b.transport);
-    b.cfg.maxConnections       = opts.maxConnections;
-    b.cfg.maxInConnections     = opts.maxInConnections;
-    b.cfg.maxOutConnections    = opts.maxOutConnections;
-    b.cfg.maxConnsPerPeer      = opts.maxConnsPerPeer;
-
-    b.cfg.mix.mixPrivKeyHex     = borrowStr(b.mixPrivKeyHex);
-    b.cfg.mix.coverRateFraction = opts.mix.coverRateFraction;
-
-    b.cfg.rln.keystorePath              = borrowStr(b.keystorePath);
-    b.cfg.rln.keystorePassword          = borrowStr(b.keystorePassword);
-    b.cfg.rln.treePath                  = borrowStr(b.treePath);
-    b.cfg.rln.rlnResourcesPath          = borrowStr(b.rlnResourcesPath);
-    b.cfg.rln.rlnIdentifierHex          = borrowStr(b.rlnIdentifier);
-    b.cfg.rln.epochDurationSeconds      = opts.rln.epochDurationSeconds;
-    b.cfg.rln.period                    = opts.rln.period;
-    b.cfg.rln.messagingRate             = opts.rln.messagingRate;
-    b.cfg.rln.maxEpochGap               = opts.rln.maxEpochGap;
-    b.cfg.rln.userMessageLimit          = opts.rln.userMessageLimit;
-    b.cfg.rln.acceptableRootWindowSize  = opts.rln.acceptableRootWindowSize;
-    b.cfg.rln.stakedFund                = borrowStr(b.stakedFund);
-    b.cfg.rln.membershipContentTopic    = borrowStr(b.membershipContentTopic);
-    b.cfg.rln.proofMetadataContentTopic = borrowStr(b.proofMetadataContentTopic);
-    b.cfg.rln.coordCluster              = opts.rln.coordCluster;
-
-    b.cfg.discovery.mountServiceDiscovery = opts.discovery.mountServiceDiscovery;
-    b.cfg.discovery.serviceId             = borrowStr(b.serviceId);
-    return bp;
-}
+    FfiConfigBundle(const FfiConfigBundle&) = delete;
+    FfiConfigBundle& operator=(const FfiConfigBundle&) = delete;
+};
 
 // ---------------------------------------------------------------------------
 // Reply trampolines
@@ -328,6 +265,26 @@ static void onRlnMembershipRegistered(const RlnMembershipRegisteredEvent* evt, v
     });
 }
 
+static void onRlnPublishRequested(const RlnPublishRequestedEvent* evt, void* ud) {
+    auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
+    if (!evt || !self) return;
+    std::string topic(evt->contentTopic.data ? evt->contentTopic.data : "",
+                      evt->contentTopic.data ? evt->contentTopic.len : 0);
+    std::vector<uint8_t> payload;
+    if (evt->payload.len > 0)
+        payload.assign(evt->payload.data, evt->payload.data + evt->payload.len);
+    hostEmit(self, "RlnPublishRequested", {
+        {"contentTopic", topic},
+        {"payload",      payload},
+    });
+    // Same pull-style buffering so a shell orchestrator can ferry frames
+    // between logoscore daemons via `drainCoordBacklog` + `deliverCoordFrame`.
+    {
+        std::lock_guard<std::mutex> lk(self->m_backlogMutex);
+        self->m_coordBacklog.push_back({std::move(topic), std::move(payload)});
+    }
+}
+
 } // namespace  (closes the file-scope anonymous namespace opened above the
   // FfiConfigBundle / cb* / on* helpers)
 
@@ -386,10 +343,16 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
         m_ctx = nullptr;
     }
 
-    auto bundle = buildFfiConfig(m_options);
+    {
+        std::lock_guard<std::mutex> backlogLock(m_backlogMutex);
+        m_coordBacklog.clear();
+        m_inbox.clear();
+    }
+
+    FfiConfigBundle bundle(m_options);
     auto* p = new std::promise<SyncResult>();
     auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_create(&bundle->cfg, cbCreate, p);
+    int ret = libp2p_mix_rln_ctx_create(&bundle.cfg, cbCreate, p);
     if (ret != 0) {
         auto r = reclaimOnSubmitFail(p, f, ret, "createNode");
         return {false, {}, r.message};
@@ -402,6 +365,8 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
     // event trampolines can find us.
     libp2p_mix_rln_ctx_add_on_incoming_mix_message_listener(m_ctx, onIncomingMixMessage, this);
     libp2p_mix_rln_ctx_add_on_rln_membership_registered_listener(m_ctx, onRlnMembershipRegistered, this);
+
+    libp2p_mix_rln_ctx_add_on_rln_publish_requested_listener(m_ctx, onRlnPublishRequested, this);
 
     return {true, json{{"created", true}}, ""};
 }
@@ -616,36 +581,14 @@ StdLogosResult Libp2pMixRlnModuleImpl::listMixPeers() {
 // Multi-node topology + coord ---------------------------------------------
 
 namespace {
-std::string hexEncodeBytes(const uint8_t* data, size_t len) {
-    std::string out;
-    out.reserve(len * 2);
-    static const char* hex = "0123456789abcdef";
-    for (size_t i = 0; i < len; i++) {
-        out.push_back(hex[(data[i] >> 4) & 0xF]);
-        out.push_back(hex[data[i] & 0xF]);
-    }
-    return out;
-}
-
 std::vector<uint8_t> hexDecodeStr(const std::string& in, bool& ok) {
     ok = true;
-    std::string s = in;
-    if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) s.erase(0, 2);
-    if (s.size() % 2 != 0) { ok = false; return {}; }
-    std::vector<uint8_t> out;
-    out.reserve(s.size() / 2);
-    auto hexv = [&](char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-        if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
-        return -1;
-    };
-    for (size_t i = 0; i < s.size(); i += 2) {
-        int hi = hexv(s[i]), lo = hexv(s[i + 1]);
-        if (hi < 0 || lo < 0) { ok = false; return {}; }
-        out.push_back(static_cast<uint8_t>((hi << 4) | lo));
+    try {
+        return libp2p_mix_rln_config::decodeHex(in);
+    } catch (const std::invalid_argument&) {
+        ok = false;
+        return {};
     }
-    return out;
 }
 
 // getLocalMixPeerRecord's reply carries the whole MixPeerRecord struct — pack
@@ -664,6 +607,7 @@ void cbGetLocalMixPeerRecord(int ec, const MixPeerRecord* r,
             {"peerId",          std::string(r->peerId.data ? r->peerId.data : "",
                                             r->peerId.data ? r->peerId.len : 0)},
             {"multiaddrs",      std::move(addrs)},
+            {"exitEnabled",     r->exitEnabled},
             {"mixPubKeyHex",    hexEncodeBytes(r->mixPubKey.data, r->mixPubKey.len)},
             {"libp2pPubKeyHex", std::string(r->libp2pPubKeyHex.data ? r->libp2pPubKeyHex.data : "",
                                             r->libp2pPubKeyHex.data ? r->libp2pPubKeyHex.len : 0)},
@@ -731,7 +675,12 @@ StdLogosResult Libp2pMixRlnModuleImpl::addMixPeer(const std::string& recordJson)
         addrsFfi.push_back(s);
     }
 
+    auto exitIt = j.find("exitEnabled");
+    if (exitIt != j.end() && !exitIt->is_boolean())
+        return {false, {}, "addMixPeer: exitEnabled must be a boolean"};
+
     MixPeerRecord rec{};
+    rec.exitEnabled = j.value("exitEnabled", false);
     rec.peerId          = NimFfiStr{const_cast<char*>(peerId.c_str()), peerId.size()};
     rec.multiaddrs.data = addrsFfi.data();
     rec.multiaddrs.len  = addrsFfi.size();
@@ -772,6 +721,50 @@ StdLogosResult Libp2pMixRlnModuleImpl::mountReceiver(
     auto r = awaitPromise(f, kDefaultOpTimeoutMs);
     if (!r.ok) return {false, {}, "mountReceiver: " + r.message};
     return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::deliverCoordFrame(
+    const std::string& contentTopic, const std::string& payloadHex)
+{
+    std::lock_guard<std::mutex> lk(m_callMutex);
+    if (!m_ctx) return {false, {}, "deliverCoordFrame: node not created"};
+
+    bool ok = false;
+    auto payload = hexDecodeStr(payloadHex, ok);
+    if (!ok) return {false, {}, "deliverCoordFrame: invalid payloadHex"};
+
+    RlnCoordFrame frame{};
+    frame.contentTopic = NimFfiStr{const_cast<char*>(contentTopic.c_str()),
+                                   contentTopic.size()};
+    frame.data.data    = payload.data();
+    frame.data.len     = payload.size();
+
+    auto* p = new std::promise<SyncResult>();
+    auto f = p->get_future();
+    int ret = libp2p_mix_rln_ctx_deliver_coord_frame(m_ctx, &frame, cbBool, p);
+    if (ret != 0) {
+        auto r = reclaimOnSubmitFail(p, f, ret, "deliverCoordFrame");
+        return {false, {}, r.message};
+    }
+    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
+    if (!r.ok) return {false, {}, "deliverCoordFrame: " + r.message};
+    return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
+}
+
+StdLogosResult Libp2pMixRlnModuleImpl::drainCoordBacklog() {
+    std::vector<CoordBacklogEntry> drained;
+    {
+        std::lock_guard<std::mutex> lk(m_backlogMutex);
+        drained.swap(m_coordBacklog);
+    }
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& e : drained) {
+        arr.push_back({
+            {"contentTopic", e.contentTopic},
+            {"payloadHex",   hexEncodeBytes(e.payload.data(), e.payload.size())},
+        });
+    }
+    return {true, arr, ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::drainReceivedMessages() {

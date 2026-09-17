@@ -59,6 +59,7 @@ public:
     // Set by the codegen glue after construction so the impl can push events.
     // Known event names:
     //   "IncomingMixMessage" — {proto, payload: byte[], surb: byte[]}
+    //   "RlnPublishRequested" — {contentTopic, payload: byte[]}
     //   "RlnMembershipRegistered" — {index, root: byte[]}
     std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
@@ -79,7 +80,12 @@ public:
     StdLogosResult registerRlnMembership();
     StdLogosResult hasRlnMembership();
 
-    // Mixnet send ----------------------------------------------------------
+    // Transport these frames through an external Relay-capable Delivery module.
+    // Use either the publish event or the pull backlog for outbound delivery.
+    StdLogosResult deliverCoordFrame(const std::string& contentTopic, const std::string& payloadHex);
+    StdLogosResult drainCoordBacklog();
+
+    // Application sends, including explicit SURB replies, require mix.allowSend.
     StdLogosResult sendMixMessage(const std::string& destPeerId,
                                   const std::string& destMultiaddr,
                                   const std::string& proto,
@@ -105,20 +111,18 @@ public:
     StdLogosResult sendMixSurbReply(const std::vector<uint8_t>& surb,
                                     const std::vector<uint8_t>& payload);
 
-    // Multi-node topology --------------------------------------------------
-    // Returns a JSON object {peerId, multiaddrs[], mixPubKeyHex, libp2pPubKeyHex}
-    // — everything a peer needs to feed into another node's `addMixPeer` so
-    // both can appear in each other's Sphinx path pool.
+    // Peer record includes peerId, multiaddrs, mixPubKeyHex, libp2pPubKeyHex,
+    // and exitEnabled. Only advertised exits are eligible for application delivery.
     StdLogosResult getLocalMixPeerRecord();
 
     // Installs a peer record into the local nodePool. Takes the whole record
     // as a JSON string of the shape `getLocalMixPeerRecord` returns
-    // (`{peerId, multiaddrs, mixPubKeyHex, libp2pPubKeyHex}`) — passing it as
+    // (`{peerId, multiaddrs, mixPubKeyHex, libp2pPubKeyHex, exitEnabled}`) — passing it as
     // a single string keeps the LIDL args scalar-only, which is what the
     // `logoscore call` CLI knows how to marshal.
     StdLogosResult addMixPeer(const std::string& recordJson);
 
-    // Mounts a plain libp2p protocol on `codec`; incoming length-prefixed
+    // Requires mix.allowExit. Mounts a protocol on `codec`; length-prefixed
     // bytes (up to `maxSize`) are queued into an inbox, drainable via
     // `drainReceivedMessages`. Pairs with `sendMixMessage(isExitDest=true)`.
     StdLogosResult mountReceiver(const std::string& codec, int64_t maxSize);
@@ -168,4 +172,9 @@ public:
     };
     std::mutex m_backlogMutex;
     std::vector<InboxEntry>        m_inbox;
+    struct CoordBacklogEntry {
+        std::string contentTopic;
+        std::vector<uint8_t> payload;
+    };
+    std::vector<CoordBacklogEntry> m_coordBacklog;
 };

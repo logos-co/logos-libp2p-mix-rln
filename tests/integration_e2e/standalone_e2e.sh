@@ -134,6 +134,19 @@ check_nonempty "getNodeInfo PeerId"       "$(info PeerId)"
 check_nonempty "getNodeInfo Multiaddrs"   "$(info Multiaddrs)"
 check_nonempty "getNodeInfo MixPublicKey" "$(info MixPublicKey)"
 
+echo "----- default intermediate role rejects endpoint APIs -----"
+check "exit capability disabled" "$(call getLocalMixPeerRecord | jq -r '.result.value.exitEnabled')" false
+resp=$(call mountReceiver /roles/test/1.0.0 1024)
+check "mountReceiver denied" "$(jq -r '.result.success' <<<"$resp")" false
+if [[ "$(jq -r '.result.error' <<<"$resp")" != *mix.allowExit* ]]; then
+    echo "FAIL: receiver rejection did not report exit policy" >&2; fail=1
+fi
+resp=$(call sendMixMessageToExit "$(info PeerId)" /roles/test/1.0.0 hello)
+check "sendMixMessageToExit denied" "$(jq -r '.result.success' <<<"$resp")" false
+if [[ "$(jq -r '.result.error' <<<"$resp")" != *mix.allowSend* ]]; then
+    echo "FAIL: send rejection did not report sender policy" >&2; fail=1
+fi
+
 echo "----- unknown getNodeInfo field is rejected -----"
 if rejected getNodeInfo Nonexistent; then
     echo "ok: getNodeInfo Nonexistent rejected"
@@ -141,6 +154,18 @@ else
     echo "FAIL: getNodeInfo Nonexistent should fail" >&2
     fail=1
 fi
+
+echo "----- coordination input validation -----"
+for args in 'unknown-topic 00' '/mix/rln/membership/v1 not-hex'; do
+    read -r topic payload <<<"$args"
+    if rejected deliverCoordFrame "$topic" "$payload"; then
+        echo "ok: invalid coordination frame rejected"
+    else
+        echo "FAIL: invalid coordination frame accepted" >&2
+        fail=1
+    fi
+done
+check "empty coordination backlog" "$(call drainCoordBacklog | jq -c '.result.value')" '[]'
 
 echo "----- invalid createNode config is rejected and logged -----"
 if rejected createNode '{not valid json'; then
