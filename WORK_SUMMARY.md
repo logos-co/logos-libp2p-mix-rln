@@ -142,8 +142,10 @@ match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 - [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)
 - [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-rln-ffi/pull/2)
 - [Logos module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2)
-- [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436), needed by the
-  legacy embedded provider.
+- [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436) is **closed**.
+  The shared-RLN integration does not require it to merge. Its fork branch
+  remains available because the FFI build still references it for the legacy
+  embedded provider.
 
 The previous standalone and optional Delivery-coordination tests passed for
 that baseline. They do not prove the new native Delivery Mix path.
