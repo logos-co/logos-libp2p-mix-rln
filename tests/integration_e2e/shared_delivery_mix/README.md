@@ -10,7 +10,9 @@ The scenario creates seven isolated hosts: a native Delivery Mix sender, three
 standalone intermediates, a native Delivery Mix/Lightpush exit, a Relay service,
 and a Delivery recipient. Each host has its own funded wallet and backend;
 Mix and Relay memberships use separate scopes. Intermediate hosts use a second
-Delivery switch for metadata coordination.
+Delivery switch running Relay for metadata coordination. These nodes join the
+Relay mesh directly; they do not enable Lightpush or Filter services. The sender
+and recipient remain light clients, supported by the exit and Relay service.
 
 ```sh
 export RLN_E2E_ROOT=/path/to/logos-rln-e2e

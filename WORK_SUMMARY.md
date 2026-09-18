@@ -3,7 +3,7 @@
 Updated: 2026-09-18. **The complete fresh-host shared-RLN fixture passed**,
 including provisioning and the no-direct-fallback test. All seven integration
 PRs and the wallet dependency fix are published and open. The final pinned
-bundles build. Some remote CI jobs are still running.
+bundles build. The previously pending remote CI checks have passed.
 
 ## Accepted architecture
 
@@ -23,7 +23,8 @@ bundles build. Some remote CI jobs are still running.
 - Mix and Relay RLN use separate application scopes. A host sharing one RLN
   backend configures all its registries and owns its lifetime. Delivery's
   preset gains `manage-backend=false` for this deployment.
-- Standalone Mix coordination can use a separately managed Delivery node.
+- Standalone Mix coordination uses a separately managed Delivery Relay node
+  in the current fixture. Sender and recipient remain Delivery light clients.
   Those two switches have different peer IDs and routing tables. Loading
   Delivery alone does not connect this bridge.
 - The merged Logos Mixnet specification requires RLN-protected Relay
@@ -89,8 +90,11 @@ Completed locally:
   Mix, Delivery, shared RLN, and registry bundles. Every scoped membership
   became active, the exact payload arrived through Mix, all Mix participants
   received protected metadata, and the no-direct-fallback check passed.
-  Log: `/tmp/mix-fixed-wallet-network.log`.
-  Run: `/tmp/mix-rln-e2e/runs/20260917-235120-shared-delivery-mix-local`.
+  Rerun with direct Relay coordination on all three intermediate hosts passed;
+  their Delivery logs confirm Relay enabled and Filter/Lightpush services disabled.
+  Sender and recipient remained light clients.
+  Log: `/tmp/mix-relay-coordination-network.log`.
+  Run: `/tmp/mix-rln-e2e/runs/20260918-081055-shared-delivery-mix-local`.
 - Fresh provisioning exposed a registry wallet bug: it honored a configured
   10,000,000 gas limit but kept a fee cap calculated for 2,000,000. The wallet
   dependency now calculates the cap from the configured limit. **All 50 wallet
@@ -102,10 +106,9 @@ Completed locally:
 
 ## Remote validation and deployment limits
 
-Native Delivery, shared RLN, and core Mix CI passed, including the core Nix
-snapshot/build check. Delivery module CI and this module's code-scanning jobs
-are still running; local completion does not imply all remote checks have
-finished. Delivery CI now stages the registry-owned wallet dependency
+Native Delivery, shared RLN, core Mix, and Delivery module CI passed, as did
+this module's code-scanning jobs. This includes the core Nix snapshot/build
+check. Delivery CI now stages the registry-owned wallet dependency
 chain instead of the removed `lez_core` module.
 
 The fresh fixture used new hosts and wallets on an existing isolated local

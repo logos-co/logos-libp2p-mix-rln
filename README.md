@@ -41,7 +41,7 @@ flowchart TB
     RLN <--> Registry[Registry backend]
     Switch <-->|Sphinx packets| Peers[Mix peers]
     Adapter <-->|Metadata events and input| Host
-    Host <-->|Explicit coordination bridge| Delivery[Separate Delivery node]
+    Host <-->|Explicit coordination bridge| Delivery[Separate Delivery Relay node]
     Delivery <-->|Relay proof calls; separate scope| RLN
     Delivery <-->|RLN-protected metadata| Relay[Relay network]
 ```
@@ -68,8 +68,9 @@ Intermediate-only nodes still generate cover traffic and participate in
 routing and proof coordination. These flags gate application endpoint APIs;
 they do not turn off the protocol work needed by intermediates.
 
-A Delivery **light client** is a Relay/Filter/Lightpush role. A Mix **edge** is
-an application sender or exit. These are different roles: a Delivery light
+A Delivery **light client** uses Lightpush and Filter services without joining
+the Relay mesh. A Mix **edge** is an application sender or exit. These are
+different roles: a Delivery light
 client beside an intermediate does not become a Mix edge merely by carrying
 coordination. Delivery becomes a Mix edge when its native Mix support is
 enabled and used for application sending or exit handling.
@@ -131,7 +132,7 @@ not that the receiving application has consumed the message.
 | Host | Mix traffic | Delivery traffic | RLN memberships |
 | --- | --- | --- | --- |
 | Sender | Native Delivery creates the route and receives the SURB response. | Light client sends through `send(Required)` and exchanges proof metadata. | Mix and Relay |
-| Three intermediate hosts | Each standalone module forwards packets; application sending and exit handling stay disabled. | Each has a separate Delivery light client for metadata only. | Mix and Relay |
+| Three intermediate hosts | Each standalone module forwards packets; application sending and exit handling stay disabled. | Each has a separate Delivery Relay node for proof metadata coordination. | Mix and Relay |
 | Exit | Native Delivery handles the final Mix hop and returns a SURB response. | Lightpush service publishes the application message to Relay. | Mix and Relay |
 | Relay service | None. | Relays messages and serves Filter subscriptions. | Relay |
 | Recipient | None. | Receives the application payload through Filter. | Relay |
@@ -148,11 +149,14 @@ separate Delivery switch. They have different peer IDs, listeners, routing
 pools, and lifecycles. `addMixPeer()` changes only the Mix pool. Starting Mix
 does not start Delivery or subscribe it to metadata.
 
-Coordination Delivery may run Relay itself or use Lightpush and Filter
-services on other Relay nodes. Its application anonymity setting should not
-route proof metadata back through Mix: coordination must remain available
-without depending on the Mix traffic it validates. Native Delivery's adapter
-publishes its own metadata directly through Relay or non-Mix Lightpush.
+In this deployment, each intermediate's Delivery node joins the Relay mesh
+and publishes and receives proof metadata directly. Sender and recipient
+Delivery nodes remain light clients. Lightpush and Filter services run on the
+exit and the separate Relay service node. The coordination node's anonymity
+setting should not route proof metadata back through Mix: coordination must
+remain available without depending on the Mix traffic it validates. Native
+Delivery's adapter publishes its own metadata directly through Relay or
+non-Mix Lightpush.
 Native shared Mix rejects startup when Relay RLN is disabled.
 
 ## Shared RLN and coordination
