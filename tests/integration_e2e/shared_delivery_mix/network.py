@@ -118,6 +118,8 @@ def start_delivery(node, peers, *, service=False):
                   relay=service, filter=service, lightpush=service, store=False,
                   peerExchange=False, discv5Discovery=False, rendezvous=False,
                   reliabilityEnabled=True, staticnodes=peers)
+    # All test hosts use loopback; keep the production per-IP limit out of this topology.
+    config["ip-colocation-limit"] = 0
     if node in ("sender", "exit"):
         config.update(mix=True, **{"mix-rln-registry-id": REGISTRY,
                                   "mix-rln-identifier-hex": MIX_SCOPE,

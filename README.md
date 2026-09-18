@@ -5,8 +5,8 @@ forwards Sphinx packets, and checks per-hop RLN proofs through the shared
 `liblogos_rln_module`. Application sending and exit delivery are disabled by
 default and require explicit opt-in.
 
-**The shared-RLN / native Delivery integration is in progress.** Component
-checks have passed; the full network acceptance test is still pending. See
+The shared-RLN / native Delivery message path has passed local end-to-end
+testing, including the no-direct-fallback check. See
 [WORK_SUMMARY.md](WORK_SUMMARY.md) for tested revisions and publication status.
 
 ## Architecture
@@ -42,6 +42,7 @@ flowchart TB
     Switch <-->|Sphinx packets| Peers[Mix peers]
     Adapter <-->|Metadata events and input| Host
     Host <-->|Explicit coordination bridge| Delivery[Separate Delivery node]
+    Delivery <-->|Relay proof calls; separate scope| RLN
     Delivery <-->|RLN-protected metadata| Relay[Relay network]
 ```
 
@@ -125,6 +126,21 @@ that require payload confidentiality from the exit and Relay participants
 must encrypt their own content. A Lightpush response confirms that operation,
 not that the receiving application has consumed the message.
 
+### Deployment used by the integration test
+
+| Host | Mix traffic | Delivery traffic | RLN memberships |
+| --- | --- | --- | --- |
+| Sender | Native Delivery creates the route and receives the SURB response. | Light client sends through `send(Required)` and exchanges proof metadata. | Mix and Relay |
+| Three intermediate hosts | Each standalone module forwards packets; application sending and exit handling stay disabled. | Each has a separate Delivery light client for metadata only. | Mix and Relay |
+| Exit | Native Delivery handles the final Mix hop and returns a SURB response. | Lightpush service publishes the application message to Relay. | Mix and Relay |
+| Relay service | None. | Relays messages and serves Filter subscriptions. | Relay |
+| Recipient | None. | Receives the application payload through Filter. | Relay |
+
+Each host owns one shared RLN backend and its own funded registry wallet. On
+an intermediate host, both modules use that backend through different scopes.
+The sender and exit use Delivery's native Mix switch; they do not load the
+standalone Mix module. The recipient is a Delivery receiver, not a Mix exit.
+
 ### Two switches on an intermediate host
 
 A host using Delivery for coordination has a standalone Mix switch and a
@@ -148,8 +164,8 @@ belongs to the backend/registry; the specification calls for a window of 5.
 The example scope and topic are integration values, not assigned deployment
 identifiers.
 
-Mix and Relay use **separate RLN application scopes and memberships** even
-when they share one backend process. A Mix packet proof is bound to that hop's
+This deployment provisions **separate RLN application scopes and memberships**
+for Mix and Relay, even when they share one backend process. A Mix packet proof is bound to that hop's
 serialized Sphinx packet. A Relay proof protects the Delivery message carrying
 metadata. One is not a substitute for the other.
 
@@ -268,6 +284,11 @@ record: peer ID, multiaddresses, Mix public key, libp2p public key, and
 `exitEnabled`. Intermediate records advertise `exitEnabled=false`; application
 routes must end at an eligible exit. All participants need usable peer pools.
 
+Native Delivery waits for Identify before checking a registered Mix peer. A
+standalone Mix-only peer does not need to implement Waku metadata; a peer that
+advertises Waku metadata still undergoes the normal cluster check. Adding a
+Mix record does not bypass that check for ordinary Delivery peers.
+
 Discovery remains host-managed. This API does not implement Logos Service
 Discovery or validate a peer's registry membership merely by adding its record.
 
@@ -325,12 +346,28 @@ Its seven hosts provide sender, three standalone intermediates, native Mix
 exit, Relay service, and recipient. It checks the exact received payload,
 protected metadata exchange, and a negative case: stop Mix intermediates while
 keeping Relay/Filter usable and verify that `Required` does not bypass Mix.
-The fixture's presence is not a claim that this full test has passed; current
-results are recorded in the work summary.
+The positive and negative message-path checks have passed with real local-chain
+memberships. Tested revisions and fresh-provisioning results are recorded in
+the work summary.
 
 Older `standalone-e2e`, `multi-node-e2e`, `delivery-coordination-e2e`, and
 `delivery-edge-coordination-e2e` fixtures exercise the legacy embedded provider.
 They do not establish shared-backend or native Delivery Mix interoperability.
+
+### Current local-chain provisioning limitation
+
+The positive routing and no-fallback checks passed with active memberships.
+A subsequent run creating fresh wallets with the final pinned bundles stopped
+before network startup: the LEZ wallet submitted `max_fee=134400000` while the
+sequencer required a fee reserve of `140004216`. The wallet was funded.
+
+The pinned wallet applies the configured 10,000,000 execution gas limit but
+still calculates its fixed fee cap from the default 2,000,000 limit. Rising
+base fees can therefore reject a registration. The rejected membership stays
+pending until the backend's confirmation timeout; calling registration again
+while it is pending does not resubmit it. A wallet fee-cap fix is needed for
+reliable fresh provisioning. This limitation is separate from Mix packet
+proof validation and the already-tested message path.
 
 ## Migration limits
 
