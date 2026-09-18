@@ -25,13 +25,11 @@ LOGOS_TEST(defaults_match_lip_mixnet) {
     LOGOS_ASSERT_FALSE(o.mix.allowSend);
     LOGOS_ASSERT_FALSE(o.mix.allowExit);
     LOGOS_ASSERT_EQ(o.maxConnsPerPeer, 2);
-    LOGOS_ASSERT_EQ(o.rln.provider, std::string("module"));
     LOGOS_ASSERT_EQ(cfg::decodeHex(o.rln.rlnIdentifierHex).size(), size_t(32));
     LOGOS_ASSERT_EQ(o.rln.epochDurationSeconds, 10);
     LOGOS_ASSERT_EQ(o.rln.maxEpochGap, 3);
     LOGOS_ASSERT_EQ(o.rln.userMessageLimit, 100);
     // The RLN Relay coord topics have placeholder defaults until the spec pins them.
-    LOGOS_ASSERT_EQ(o.rln.membershipContentTopic, std::string("/mix/rln/membership/v1"));
     LOGOS_ASSERT_EQ(o.rln.proofMetadataContentTopic, std::string("/mix/rln/metadata/v1"));
 }
 
@@ -42,9 +40,9 @@ LOGOS_TEST(from_json_overlays_nested_sections) {
         "maxConnections": 200,
         "mix": { "cover": { "rateFraction": 0.5 } },
         "rln": {
-            "keystorePath": "/tmp/ks.json",
+            "registryId": "logos:local:registry",
             "epochDurationSeconds": 10,
-            "membershipContentTopic": "/mix/rln/membership/v2"
+            "proofMetadataContentTopic": "/mix/1/metadata/proto"
         }
     })";
     bool ok = false;
@@ -55,9 +53,9 @@ LOGOS_TEST(from_json_overlays_nested_sections) {
     LOGOS_ASSERT_TRUE(o.transport == TransportKind::Quic);
     LOGOS_ASSERT_EQ(o.maxConnections, 200);
     LOGOS_ASSERT_EQ(o.mix.coverRateFraction, 0.5);
-    LOGOS_ASSERT_EQ(o.rln.keystorePath, std::string("/tmp/ks.json"));
+    LOGOS_ASSERT_EQ(o.rln.registryId, std::string("logos:local:registry"));
+    LOGOS_ASSERT_EQ(o.rln.proofMetadataContentTopic, std::string("/mix/1/metadata/proto"));
     LOGOS_ASSERT_EQ(o.rln.epochDurationSeconds, 10);
-    LOGOS_ASSERT_EQ(o.rln.membershipContentTopic, std::string("/mix/rln/membership/v2"));
 }
 
 LOGOS_TEST(from_json_rejects_malformed) {
@@ -95,15 +93,20 @@ LOGOS_TEST(endpoint_roles_are_independent_opt_ins) {
     LOGOS_ASSERT_FALSE(ok);
 }
 
-LOGOS_TEST(shared_rln_scope_is_explicit_and_unknown_providers_fail) {
+LOGOS_TEST(shared_rln_scope_is_explicit_and_legacy_settings_fail) {
     bool ok = false;
     auto options = Libp2pMixRlnModuleOptions::fromJson(
         R"({"rln":{"registryId":"logos:local:registry","registrationOptionsJson":"[]"}})", ok);
     LOGOS_ASSERT_TRUE(ok);
     LOGOS_ASSERT_EQ(options.rln.registryId, std::string("logos:local:registry"));
-    LOGOS_ASSERT_EQ(options.rln.provider, std::string("module"));
-    Libp2pMixRlnModuleOptions::fromJson(R"({"rln":{"provider":"other"}})", ok);
-    LOGOS_ASSERT_FALSE(ok);
+    for (const char* key : {"provider", "keystorePath", "keystorePassword",
+                            "treePath", "rlnResourcesPath", "membershipContentTopic"}) {
+        std::string error;
+        auto raw = json{{"rln", {{key, "embedded"}}}}.dump();
+        Libp2pMixRlnModuleOptions::fromJson(raw, ok, &error);
+        LOGOS_ASSERT_FALSE(ok);
+        LOGOS_ASSERT_TRUE(error.find(key) != std::string::npos);
+    }
 }
 
 LOGOS_TEST_MAIN()

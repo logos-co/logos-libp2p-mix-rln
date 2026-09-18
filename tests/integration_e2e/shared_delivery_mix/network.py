@@ -184,7 +184,7 @@ def main():
     for node in INTERMEDIATES:
         config = {"addrs": ["/ip4/127.0.0.1/tcp/0"],
                   "mix": {"cover": {"rateFraction": 0.01}},
-                  "rln": {"provider": "module", "registryId": REGISTRY,
+                  "rln": {"registryId": REGISTRY,
                           "rlnIdentifierHex": MIX_SCOPE,
                           "proofMetadataContentTopic": META_TOPIC}}
         call(node, MIX, "createNode", json.dumps(config))

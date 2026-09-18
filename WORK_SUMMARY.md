@@ -1,9 +1,11 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-18. **The complete fresh-host shared-RLN fixture passed**,
-including provisioning and the no-direct-fallback test. All seven integration
-PRs and the wallet dependency fix are published and open. The final pinned
-bundles build. The previously pending remote CI checks have passed.
+Updated: 2026-09-18. Standalone Mix now requires the shared RLN backend;
+the embedded provider and direct Zerokit v2 dependency are removed. The FFI
+repository is renamed to `logos-co/nim-libp2p-mix-ffi`. Its removal and rename
+commits are published. TCP/QUIC C smoke tests pass with mock backend callbacks.
+The shared-only seven-host fixture also passed with fresh wallets, real proofs,
+protected coordination, exact payload delivery, and no direct fallback.
 
 ## Accepted architecture
 
@@ -41,13 +43,14 @@ bundles build. The previously pending remote CI checks have passed.
 | Mix plugin — `/tmp/mix-plugin-review` | Shared RLN API adapter, Mix proof encoding, metadata coordination, bounded asynchronous request transport. |
 | Shared RLN — `/tmp/mix-shared-rln` | Reconstruct an omitted Mix external nullifier from scope and timestamp, verify the binding, and return it for coordination. Canonical proof handling is preserved. |
 | Standalone FFI — `/home/r/logos-co/nim-libp2p-mix-rln-ffi` | Shared-provider configuration, async request/reply events, backend membership calls, shutdown cancellation. |
-| This module | C++ async backend bridge; shared provider is the default; RLN backend declared as a dependency. |
+| This module | C++ async backend bridge; shared provider is the only backend; RLN backend declared as a dependency. |
 | Native Delivery — `/tmp/mix-delivery-native-interop` | Install the same adapter in native Mix, publish/receive coordination outside `send(Required)`, expose Mix peer records, and keep Mix/Relay callback lifetimes separate. |
 | Delivery module — `/tmp/mix-delivery-api-interop` | Forward native Mix RLN requests to the backend, expose peer record methods, support host-owned backend lifecycle. |
 
-The legacy embedded Mix RLN provider remains during migration. It uses a
-different zerokit generation and external-nullifier construction; mixing
-legacy and shared-provider participants is not a supported deployment.
+The standalone embedded provider and its direct Zerokit v2 build dependency
+are removed. Standalone Mix requires the shared RLN backend. Removed local
+keystore/tree/provider settings are rejected; C ABI consumers must rebuild.
+The shared backend still owns its cryptographic dependencies.
 
 ## Verification
 
@@ -71,8 +74,18 @@ Completed locally:
 - Both Mix and Delivery LGX bundles and the LEZ wallet runtime built. Seven
   isolated hosts have funded wallets and active scoped memberships on the local
   sequencer. Shared-provider standalone startup and metadata publication work.
-- The legacy module lifecycle test passed. The five-node legacy Sphinx/RLN
-  routing test also passed after enabling SDK worker dispatch.
+- After embedded-provider removal, the five-node FFI smoke test passed over
+  TCP and QUIC using mock shared-backend callbacks. This checks the C bridge
+  and routing. The shared-only LGX bundle builds and all six configuration
+  tests pass, including rejection of removed settings. The renamed FFI pin
+  also builds successfully with all six configuration tests passing.
+- After removal, the seven-host fixture passed with FFI `67765f6` and the
+  shared-only main runtime: all memberships became active, Delivery Required
+  reached the recipient through standalone Mix, and stopping the intermediates
+  blocked Required delivery while Relay remained usable. FFI `e13dbdc` only
+  renames the repository references and Nix package names; it builds separately.
+  Log: `/tmp/mix-shared-only-network.log`.
+  Run: `/tmp/mix-rln-e2e/runs/20260918-085857-shared-delivery-mix-local`.
 - Live testing found and fixed a host event-loop deadlock in standalone startup:
   synchronous API handlers now run on SDK workers. It also exposed Delivery's
   metadata handshake disconnecting standalone Mix-only peers before Identify
@@ -102,7 +115,7 @@ Completed locally:
 - The final bundles were built from main module runtime `2eea783` plus the
   shared-backend pin below; Delivery module `6c9a2f8`; shared backend `4f1f610`;
   registry `2f5ba3c`; and wallet `6752be25`. Native Delivery remains `9cc5bab`.
-  Subsequent README/work-summary edits do not change the tested runtime.
+  These end-to-end results predate the subsequent embedded-provider removal.
 
 ## Remote validation and deployment limits
 
@@ -124,7 +137,8 @@ the core repository's Nix dependency snapshot, which builds successfully and
 passes the remote Nix drift/build check.
 Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
 #4282 contains `9cc5babdd47d07bef396dafb54a367725ecb46e7`; Delivery module #125
-contains `6c9a2f8684a1c81f2e84abe2dc57e6b4e1fb629d` (CI cleanup and the corrected wallet dependency). The FFI shared-provider change is committed as `b2008a2`.
+contains `6c9a2f8684a1c81f2e84abe2dc57e6b4e1fb629d` (CI cleanup and the corrected wallet dependency). The FFI shared-only change is published as `67765f6`; repository rename
+`e13dbdc` is the current pin (`logos-co/nim-libp2p-mix-ffi`).
 This branch contains the Logos module bridge, current architecture docs, and
 new local-chain network fixture. The complete fresh-host positive and negative fixture passed.
 
@@ -140,12 +154,11 @@ match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 - [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
 - [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)
-- [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-rln-ffi/pull/2)
+- [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/2)
 - [Logos module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2)
 - [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436) is **closed**.
-  The shared-RLN integration does not require it to merge. Its fork branch
-  remains available because the FFI build still references it for the legacy
-  embedded provider.
+  The shared-RLN integration does not require it to merge. The standalone FFI
+  no longer references its fork.
 
-The previous standalone and optional Delivery-coordination tests passed for
-that baseline. They do not prove the new native Delivery Mix path.
+The embedded-only lifecycle and routing fixtures were removed. The shared
+Delivery/Mix fixture remains the real-cryptography end-to-end test.
