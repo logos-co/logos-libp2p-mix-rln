@@ -122,18 +122,12 @@ struct FfiConfigBundle {
         cfg.mix.allowExit         = opts.mix.allowExit;
         cfg.mix.coverRateFraction = opts.mix.coverRateFraction;
 
-        cfg.rln.provider = borrowStr(opts.rln.provider);
         cfg.rln.registryId = borrowStr(opts.rln.registryId);
         cfg.rln.rlnIdentifierHex = borrowStr(opts.rln.rlnIdentifierHex);
         cfg.rln.registrationOptionsJson = borrowStr(opts.rln.registrationOptionsJson);
-        cfg.rln.keystorePath              = borrowStr(opts.rln.keystorePath);
-        cfg.rln.keystorePassword          = borrowStr(opts.rln.keystorePassword);
-        cfg.rln.treePath                  = borrowStr(opts.rln.treePath);
-        cfg.rln.rlnResourcesPath          = borrowStr(opts.rln.rlnResourcesPath);
         cfg.rln.epochDurationSeconds      = opts.rln.epochDurationSeconds;
         cfg.rln.maxEpochGap               = opts.rln.maxEpochGap;
         cfg.rln.userMessageLimit          = opts.rln.userMessageLimit;
-        cfg.rln.membershipContentTopic    = borrowStr(opts.rln.membershipContentTopic);
         cfg.rln.proofMetadataContentTopic = borrowStr(opts.rln.proofMetadataContentTopic);
 
     }
@@ -270,15 +264,6 @@ static void onRlnModuleRequest(const RlnModuleRequestEvent* event, void* ud) {
     }
 }
 
-static void onRlnMembershipRegistered(const RlnMembershipRegisteredEvent* evt, void* ud) {
-    auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
-    if (!evt || !self) return;
-    hostEmit(self, "RlnMembershipRegistered", {
-        {"index", evt->index},
-        {"root",  std::vector<uint8_t>(evt->root.data, evt->root.data + evt->root.len)},
-    });
-}
-
 static void onRlnPublishRequested(const RlnPublishRequestedEvent* evt, void* ud) {
     auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
     if (!evt || !self) return;
@@ -309,21 +294,11 @@ static void onRlnPublishRequested(const RlnPublishRequestedEvent* evt, void* ud)
 Libp2pMixRlnModuleImpl::Libp2pMixRlnModuleImpl(const Libp2pMixRlnModuleOptions& options)
     : m_options(options) {
     ensureNimMain();
-    // Initial createNode from load()-supplied options. If it fails, m_initError
-    // holds the reason; status() surfaces it. Individual ops guard on m_ctx.
-    if (m_options.rln.provider == "module") return;
-    auto r = createNode(std::string());  // empty JSON = "use m_options as-is"
-    if (!r.success) {
-        m_initError = r.error;
-        fprintf(stderr, "libp2p_mix_rln_module: initial createNode failed: %s\n",
-                m_initError.c_str());
-    }
 }
 
 Libp2pMixRlnModuleImpl::~Libp2pMixRlnModuleImpl() {
     if (m_ctx) {
-        // Best-effort stop before destroy — silences the RLN plugin's
-        // "waiting for sync" future if the caller forgot stop().
+        // Stop pending backend work before releasing the FFI context.
         (void)stop();
         m_rlnBridge.detach();
         libp2p_mix_rln_ctx_destroy(m_ctx);
@@ -382,15 +357,12 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
     // Register event listeners now that we have a ctx. Passing `this` as ud so
     // event trampolines can find us.
     libp2p_mix_rln_ctx_add_on_incoming_mix_message_listener(m_ctx, onIncomingMixMessage, this);
-    if (m_options.rln.provider == "module") {
-        if (!m_rlnBridge.attach(m_ctx)) {
-            libp2p_mix_rln_ctx_destroy(m_ctx);
-            m_ctx = nullptr;
-            return {false, {}, "RLN module transport unavailable"};
-        }
-        libp2p_mix_rln_ctx_add_on_rln_module_request_listener(m_ctx, onRlnModuleRequest, this);
+    if (!m_rlnBridge.attach(m_ctx)) {
+        libp2p_mix_rln_ctx_destroy(m_ctx);
+        m_ctx = nullptr;
+        return {false, {}, "RLN module transport unavailable"};
     }
-    libp2p_mix_rln_ctx_add_on_rln_membership_registered_listener(m_ctx, onRlnMembershipRegistered, this);
+    libp2p_mix_rln_ctx_add_on_rln_module_request_listener(m_ctx, onRlnModuleRequest, this);
 
     libp2p_mix_rln_ctx_add_on_rln_publish_requested_listener(m_ctx, onRlnPublishRequested, this);
 

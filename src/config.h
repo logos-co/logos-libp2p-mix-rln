@@ -30,21 +30,15 @@ struct MixOptions {
 };
 
 struct RlnOptions {
-    std::string provider = "module";
     std::string registryId;
     std::string rlnIdentifierHex = "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000";
     std::string registrationOptionsJson = "[]";
-    std::string keystorePath;
-    std::string keystorePassword;
-    std::string treePath;
-    std::string rlnResourcesPath;
 
     // Must agree with the shared backend's registry configuration.
     int epochDurationSeconds = 10;
     int maxEpochGap = 3;
     int userMessageLimit = 100;
 
-    std::string membershipContentTopic = "/mix/rln/membership/v1";
     std::string proofMetadataContentTopic = "/mix/rln/metadata/v1";
 };
 
@@ -127,20 +121,18 @@ inline void applyMix(const nlohmann::json& j, MixOptions& m) {
 }
 
 inline void applyRln(const nlohmann::json& j, RlnOptions& r) {
-    r.provider = j.value("provider", r.provider);
+    for (const char* key : {"provider", "keystorePath", "keystorePassword",
+                            "treePath", "rlnResourcesPath", "membershipContentTopic"}) {
+        if (j.contains(key))
+            throw std::invalid_argument(std::string("rln.") + key +
+                                        " is no longer supported; configure the shared RLN module");
+    }
     r.registryId = j.value("registryId", r.registryId);
     r.rlnIdentifierHex = j.value("rlnIdentifierHex", r.rlnIdentifierHex);
     r.registrationOptionsJson = j.value("registrationOptionsJson", r.registrationOptionsJson);
-    if (r.provider != "module" && r.provider != "embedded")
-        throw std::invalid_argument("rln.provider must be module or embedded");
-    r.keystorePath = j.value("keystorePath", r.keystorePath);
-    r.keystorePassword = j.value("keystorePassword", r.keystorePassword);
-    r.treePath = j.value("treePath", r.treePath);
-    r.rlnResourcesPath = j.value("rlnResourcesPath", r.rlnResourcesPath);
     r.epochDurationSeconds = j.value("epochDurationSeconds", r.epochDurationSeconds);
     r.maxEpochGap = j.value("maxEpochGap", r.maxEpochGap);
     r.userMessageLimit = j.value("userMessageLimit", r.userMessageLimit);
-    r.membershipContentTopic = j.value("membershipContentTopic", r.membershipContentTopic);
     r.proofMetadataContentTopic = j.value("proofMetadataContentTopic", r.proofMetadataContentTopic);
 }
 

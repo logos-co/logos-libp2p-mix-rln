@@ -13,7 +13,6 @@
     }
   },
   "rln": {
-    "provider": "module",
     "registryId": "<registry-id>",
     "rlnIdentifierHex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000",
     "epochDurationSeconds": 10,
