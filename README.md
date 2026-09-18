@@ -5,8 +5,8 @@ forwards Sphinx packets, and checks per-hop RLN proofs through the shared
 `liblogos_rln_module`. Application sending and exit delivery are disabled by
 default and require explicit opt-in.
 
-The shared-RLN / native Delivery message path has passed local end-to-end
-testing, including the no-direct-fallback check. See
+The complete shared-RLN / native Delivery fixture has passed with fresh local
+wallets and memberships, including the no-direct-fallback check. See
 [WORK_SUMMARY.md](WORK_SUMMARY.md) for tested revisions and publication status.
 
 ## Architecture
@@ -346,28 +346,28 @@ Its seven hosts provide sender, three standalone intermediates, native Mix
 exit, Relay service, and recipient. It checks the exact received payload,
 protected metadata exchange, and a negative case: stop Mix intermediates while
 keeping Relay/Filter usable and verify that `Required` does not bypass Mix.
-The positive and negative message-path checks have passed with real local-chain
-memberships. Tested revisions and fresh-provisioning results are recorded in
-the work summary.
+The complete fixture passed using the pinned bundles: seven fresh funded
+wallets, active scoped memberships, protected metadata exchange, exact payload
+delivery, and the no-direct-fallback check. Tested revisions and logs are
+recorded in the work summary.
 
 Older `standalone-e2e`, `multi-node-e2e`, `delivery-coordination-e2e`, and
 `delivery-edge-coordination-e2e` fixtures exercise the legacy embedded provider.
 They do not establish shared-backend or native Delivery Mix interoperability.
 
-### Current local-chain provisioning limitation
+### Registry wallet compatibility
 
-The positive routing and no-fallback checks passed with active memberships.
-A subsequent run creating fresh wallets with the final pinned bundles stopped
-before network startup: the LEZ wallet submitted `max_fee=134400000` while the
-sequencer required a fee reserve of `140004216`. The wallet was funded.
+Use the pinned registry wallet dependency. Earlier builds used a fee cap based
+on the default 2,000,000 gas limit even when registration configured 10,000,000.
+Fresh provisioning then failed as base fees rose, despite funded wallets. The
+current dependency calculates the cap from the configured limit; its 50 wallet
+unit tests pass, and the complete fresh-host fixture passes with this fix.
 
-The pinned wallet applies the configured 10,000,000 execution gas limit but
-still calculates its fixed fee cap from the default 2,000,000 limit. Rising
-base fees can therefore reject a registration. The rejected membership stays
-pending until the backend's confirmation timeout; calling registration again
-while it is pending does not resubmit it. A wallet fee-cap fix is needed for
-reliable fresh provisioning. This limitation is separate from Mix packet
-proof validation and the already-tested message path.
+A submitted membership is not necessarily active. If the registry rejects its
+transaction, a retryable failure can leave it pending until the backend's
+confirmation timeout. Calling registration again while it is pending returns
+the existing record; it does not resubmit the transaction. Inspect the registry
+and wallet logs when activation fails.
 
 ## Migration limits
 

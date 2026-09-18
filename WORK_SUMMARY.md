@@ -1,9 +1,9 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-17. **The complete shared-RLN message path passed locally**,
-including the no-direct-fallback test. All seven integration PRs are open.
-Both final pinned module bundles build; fresh-host provisioning and remote CI
-are tracked separately below.
+Updated: 2026-09-18. **The complete fresh-host shared-RLN fixture passed**,
+including provisioning and the no-direct-fallback test. All seven integration
+PRs and the wallet dependency fix are published and open. The final pinned
+bundles build. Some remote CI jobs are still running.
 
 ## Accepted architecture
 
@@ -85,46 +85,55 @@ Completed locally:
   The exact application payload arrived. After stopping all intermediates,
   the Required payload remained absent while an ordinary Relay control arrived.
   Log: `/tmp/mix-identified-network.log`.
-- The final pinned Delivery bundle (native `9cc5bab`, module `d178781`) built
-  with both native static and dynamic libraries. The passing network run used
-  the same native runtime source in a dynamic-library build.
+- The complete fixture passed from seven fresh wallets using the final pinned
+  Mix, Delivery, shared RLN, and registry bundles. Every scoped membership
+  became active, the exact payload arrived through Mix, all Mix participants
+  received protected metadata, and the no-direct-fallback check passed.
+  Log: `/tmp/mix-fixed-wallet-network.log`.
+  Run: `/tmp/mix-rln-e2e/runs/20260917-235120-shared-delivery-mix-local`.
+- Fresh provisioning exposed a registry wallet bug: it honored a configured
+  10,000,000 gas limit but kept a fee cap calculated for 2,000,000. The wallet
+  dependency now calculates the cap from the configured limit. **All 50 wallet
+  unit tests pass**, and the complete fixture passed after pinning the fix.
+- The final bundles were built from main module runtime `2eea783` plus the
+  shared-backend pin below; Delivery module `6c9a2f8`; shared backend `4f1f610`;
+  registry `2f5ba3c`; and wallet `6752be25`. Native Delivery remains `9cc5bab`.
+  Subsequent README/work-summary edits do not change the tested runtime.
 
-## Remaining validation
+## Remote validation and deployment limits
 
-A fresh-host run with the final pinned bundles stopped during membership
-provisioning: the local sequencer rejected a funded wallet transaction with
-`Incorrect fee`. This happened before network startup, after sender, m1, and
-m2 obtained both memberships. It does not count as a passing fresh fixture.
-The diagnostic retry reproduced it: `max_fee=134400000` was below the
-required `140004216`. The pinned wallet honors the configured 10,000,000 gas
-limit but calculates its constant fee cap using the 2,000,000 default. The
-wallet fee-cap correction is being tested in a dedicated dependency branch; retrying a still-pending
-membership does not resubmit it. Logs: `/tmp/mix-final-network-retry.log` and
-`/tmp/mix-shared-chain/devnet-diagnostic.log`. The earlier message-path result
-stands; clean provisioning is not verified.
+Native Delivery, shared RLN, and core Mix CI passed, including the core Nix
+snapshot/build check. Delivery module CI and this module's code-scanning jobs
+are still running; local completion does not imply all remote checks have
+finished. Delivery CI now stages the registry-owned wallet dependency
+chain instead of the removed `lez_core` module.
 
-Native Delivery CI passed. Remote CI is still running for core Mix and the
-Delivery module. The core Nix dependency snapshot and Delivery documentation's RLN
-module pins were refreshed after CI exposed stale build metadata.
+The fresh fixture used new hosts and wallets on an existing isolated local
+chain deployment. It does not establish a production deployment, automatic
+service discovery, full specification conformance, or deployment identifiers.
+Those limits are described in the README.
 
 ## PRs and publication state
 
-Core Mix #58 now includes commit `350ee8ff0a78ab3325c863a76d87fc6e6aa09f40`.
-Consumers pin functional revision `29eaaf1`; the later commit only refreshes
-the core repository's Nix dependency snapshot, which also builds successfully.
+Core Mix #58 now includes commit `5803d68741eb54ea56ac0f91bc4e8f4caf34ce8e`.
+Consumers pin functional revision `29eaaf1`; the later commits only refresh
+the core repository's Nix dependency snapshot, which builds successfully and
+passes the remote Nix drift/build check.
 Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
 #4282 contains `9cc5babdd47d07bef396dafb54a367725ecb46e7`; Delivery module #125
-contains `6e8925c` (the tested runtime is `d178781`; the follow-up only updates CI). The FFI shared-provider change is committed as `b2008a2`.
+contains `6c9a2f8684a1c81f2e84abe2dc57e6b4e1fb629d` (CI cleanup and the corrected wallet dependency). The FFI shared-provider change is committed as `b2008a2`.
 This branch contains the Logos module bridge, current architecture docs, and
-new local-chain network fixture. The positive and negative message-path checks passed.
+new local-chain network fixture. The complete fresh-host positive and negative fixture passed.
 
-The shared backend branch is at `f501685dd8d65452508cac77db6fae967feec6ef`,
+The shared backend branch is at `4f1f610a05d6108a88b6b9a4f365f6830365ae21`,
 based on RLN modules main `6e3c6c47d4d1ae7efa635a61a171891c23967fd8` (0.8.2).
 This replaces the older `feat/lip-alignment` baseline so local-chain layouts
 match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 
 - [Core Mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58)
 - [Mix plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22)
+- [Wallet fee cap #1](https://github.com/adklempner/logos-execution-zone/pull/1),
+  commit `6752be252e441717ab934013cce101379ea4966b`.
 - [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
 - [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)
