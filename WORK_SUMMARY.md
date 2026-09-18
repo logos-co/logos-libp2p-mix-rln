@@ -1,7 +1,9 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-17. **The shared-RLN migration is still in progress.** All seven integration PRs are open and the shared-backend libraries and
-module bundles build. The complete Delivery message path is still under test. This file distinguishes verified work from remaining work.
+Updated: 2026-09-17. **The complete shared-RLN message path passed locally**,
+including the no-direct-fallback test. All seven integration PRs are open.
+Both final pinned module bundles build; fresh-host provisioning and remote CI
+are tracked separately below.
 
 ## Accepted architecture
 
@@ -30,7 +32,7 @@ module bundles build. The complete Delivery message path is still under test. Th
   topics still need agreement. Generic host coordination is not, by itself,
   evidence of Logos Mixnet conformance.
 
-## Implemented locally
+## Implementation
 
 | Repository / checkout | Change |
 | --- | --- |
@@ -72,32 +74,49 @@ Completed locally:
   routing test also passed after enabling SDK worker dispatch.
 - Live testing found and fixed a host event-loop deadlock in standalone startup:
   synchronous API handlers now run on SDK workers. It also exposed Delivery's
-  metadata handshake disconnecting standalone Mix-only peers; a narrow exemption
-  and regression tests are being validated.
+  metadata handshake disconnecting standalone Mix-only peers before Identify
+  supplied their protocols. Registered Mix peers now wait for Identify; only
+  those without Waku metadata skip the handshake. **9 peer-manager tests pass**
+  across TCP and QUIC, including unregistered-peer and cluster-mismatch rejection.
+  The registered-peer regression was observed failing before the ordering fix.
+- The seven-host native Delivery message path passed with real shared-backend
+  memberships and protected coordination: `send(Required)` → standalone
+  intermediates → native Delivery Mix/Lightpush exit → Relay/Filter recipient.
+  The exact application payload arrived. After stopping all intermediates,
+  the Required payload remained absent while an ordinary Relay control arrived.
+  Log: `/tmp/mix-identified-network.log`.
+- The final pinned Delivery bundle (native `9cc5bab`, module `d178781`) built
+  with both native static and dynamic libraries. The passing network run used
+  the same native runtime source in a dynamic-library build.
 
-Not yet verified:
+## Remaining validation
 
-- Full `Delivery.send(Required)` → standalone intermediates → Delivery exit →
-  recipient, with real shared-backend memberships and protected coordination.
-- The corresponding no-direct-fallback negative end-to-end test.
-- Final pinned builds, module tests, updated architecture examples, and PR CI.
+A fresh-host run with the final pinned bundles stopped during membership
+provisioning: the local sequencer rejected a funded wallet transaction with
+`Incorrect fee`. This happened before network startup, after sender, m1, and
+m2 obtained both memberships. It does not count as a passing fresh fixture.
+The diagnostic retry reproduced it: `max_fee=134400000` was below the
+required `140004216`. The pinned wallet honors the configured 10,000,000 gas
+limit but calculates its constant fee cap using the 2,000,000 default. The
+wallet fee-cap correction is being tested in a dedicated dependency branch; retrying a still-pending
+membership does not resubmit it. Logs: `/tmp/mix-final-network-retry.log` and
+`/tmp/mix-shared-chain/devnet-diagnostic.log`. The earlier message-path result
+stands; clean provisioning is not verified.
 
-## Remaining work
-
-1. Validate the Delivery peer-handshake fix and rebuild its module bundle.
-2. Run the complete positive and negative message-path tests using the funded
-   local test hosts; then verify the reproducible fixture from clean nodes.
-3. Publish fixes, update dependent pins and PR descriptions, and record the
-   final network results and build revisions here.
+Native Delivery CI passed. Remote CI is still running for core Mix and the
+Delivery module. The core Nix dependency snapshot and Delivery documentation's RLN
+module pins were refreshed after CI exposed stale build metadata.
 
 ## PRs and publication state
 
-Core Mix #58 now includes commit `29eaaf1d6adb57fa95e70d0c577cf6c4855598d9`.
+Core Mix #58 now includes commit `350ee8ff0a78ab3325c863a76d87fc6e6aa09f40`.
+Consumers pin functional revision `29eaaf1`; the later commit only refreshes
+the core repository's Nix dependency snapshot, which also builds successfully.
 Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
-#4282 contains `211da9e79083a289bdb1d6c80010b15c009299d9`; Delivery module #125
-contains `429096cbcdaea67a0cdb827ce62e8ed37ba05b83`. The FFI shared-provider change is committed as `b2008a2`.
+#4282 contains `9cc5babdd47d07bef396dafb54a367725ecb46e7`; Delivery module #125
+contains `6e8925c` (the tested runtime is `d178781`; the follow-up only updates CI). The FFI shared-provider change is committed as `b2008a2`.
 This branch contains the Logos module bridge, current architecture docs, and
-new local-chain network fixture. The full network run remains pending.
+new local-chain network fixture. The positive and negative message-path checks passed.
 
 The shared backend branch is at `f501685dd8d65452508cac77db6fae967feec6ef`,
 based on RLN modules main `6e3c6c47d4d1ae7efa635a61a171891c23967fd8` (0.8.2).
