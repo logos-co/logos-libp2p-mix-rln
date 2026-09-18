@@ -1,8 +1,7 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-17. **The shared-RLN migration is still in progress.** Core
-Mix and adapter changes are pushed; the complete Delivery/module integration
-is not ready yet. This file distinguishes verified work from remaining work.
+Updated: 2026-09-17. **The shared-RLN migration is still in progress.** All seven integration PRs are open and the shared-backend libraries and
+module bundles build. The complete Delivery message path is still under test. This file distinguishes verified work from remaining work.
 
 ## Accepted architecture
 
@@ -64,10 +63,17 @@ Completed locally:
 - Standalone FFI smoke test passed over **TCP and QUIC** with the pinned core
   and adapter revisions. Standalone C++ module: **6 configuration tests passed**.
 - Native Delivery dynamic and static libraries built. Delivery C++ module:
-  **61 tests passed**. Delivery Mix sending regression suite: **13 tests passed**,
+  **61 tests passed**. Delivery Mix sending regression suite: **14 tests passed**,
   including rejection of shared Mix without protected Relay coordination.
-- Both Mix and Delivery LGX bundles built. The isolated local sequencer and
-  registry are provisioned; the LEZ wallet runtime build is still running.
+- Both Mix and Delivery LGX bundles and the LEZ wallet runtime built. Seven
+  isolated hosts have funded wallets and active scoped memberships on the local
+  sequencer. Shared-provider standalone startup and metadata publication work.
+- The legacy module lifecycle test passed. The five-node legacy Sphinx/RLN
+  routing test also passed after enabling SDK worker dispatch.
+- Live testing found and fixed a host event-loop deadlock in standalone startup:
+  synchronous API handlers now run on SDK workers. It also exposed Delivery's
+  metadata handshake disconnecting standalone Mix-only peers; a narrow exemption
+  and regression tests are being validated.
 
 Not yet verified:
 
@@ -78,24 +84,17 @@ Not yet verified:
 
 ## Remaining work
 
-1. Finish library/module builds and regression checks; fix any remaining issues.
-2. Reuse `logos-rln-e2e`'s local sequencer, wallet funding, and registry tooling
-   for the new topology. Its old Mix scenario is quarantined and is not a
-   usable acceptance test. The isolated checkout at `/tmp/mix-local-lez` has built and provisioned
-   a local registry; its module wallet runtime is still building.
-3. Run the complete positive and negative message-path tests.
-4. Update README diagrams, startup/configuration examples, and test commands
-   to describe the verified architecture. Remove migration-only duplication
-   where the verified replacement allows it.
-5. Finish publication and final pinned builds. The Delivery and shared-backend
-   draft PRs are open; update their descriptions and this file with the final
-   network results.
+1. Validate the Delivery peer-handshake fix and rebuild its module bundle.
+2. Run the complete positive and negative message-path tests using the funded
+   local test hosts; then verify the reproducible fixture from clean nodes.
+3. Publish fixes, update dependent pins and PR descriptions, and record the
+   final network results and build revisions here.
 
 ## PRs and publication state
 
 Core Mix #58 now includes commit `29eaaf1d6adb57fa95e70d0c577cf6c4855598d9`.
 Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
-#4282 contains `ab951c46b63c3d066f9c18ecf82a3598220291c3`; Delivery module #125
+#4282 contains `211da9e79083a289bdb1d6c80010b15c009299d9`; Delivery module #125
 contains `429096cbcdaea67a0cdb827ce62e8ed37ba05b83`. The FFI shared-provider change is committed as `b2008a2`.
 This branch contains the Logos module bridge, current architecture docs, and
 new local-chain network fixture. The full network run remains pending.

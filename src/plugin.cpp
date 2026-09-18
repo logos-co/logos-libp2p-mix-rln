@@ -334,6 +334,7 @@ Libp2pMixRlnModuleImpl::~Libp2pMixRlnModuleImpl() {
 bool Libp2pMixRlnModuleImpl::ok() { return m_initError.empty(); }
 
 StdLogosResult Libp2pMixRlnModuleImpl::status() {
+    std::lock_guard<std::mutex> lk(m_callMutex);
     json j = {
         {"version", kModuleVersion},
         {"state",   m_ctx ? "created" : "uninitialized"},

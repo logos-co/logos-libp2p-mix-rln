@@ -3,7 +3,8 @@
 // Logos Mixnet Module — public C++ surface exposed to the Logos Core codegen.
 //
 // Bodies live in plugin.cpp. Every FFI-backed operation is a sync-over-async
-// bridge: build a std::promise, submit through the nim-ffi typed wrapper (which
+// bridge on SDK dispatch workers, keeping the host event loop free for RLN replies.
+// Build a std::promise, submit through the nim-ffi typed wrapper (which
 // takes a reply callback), await the promise with a timeout, translate the
 // reply into StdLogosResult. Follows the same pattern as
 // logos-libp2p-module/src/plugin.{h,cpp} but against libp2p_mix_rln.h.

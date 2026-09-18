@@ -19,7 +19,7 @@ for char in sys.argv[1]:
 print("logos:local:" + value.to_bytes(32, "big").hex())
 PY
 )
-export MIX_RLN_ID=6d69782d726c6e2d7370616d2d70726f74656374696f6e2f763100000000000000
+export MIX_RLN_ID=6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000
 export RELAY_RLN_ID=5e269b6a19fce081f5808b13442dcbc3522197638dd38df5a28bc4e55236b977
 python3 - "$E2E_RUN_DIR/relay-presets.json" <<'PY'
 import json, os, sys
