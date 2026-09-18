@@ -1,6 +1,10 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-18. Standalone Mix now requires the shared RLN backend;
+Updated: 2026-09-18. FFI #2 and Logos module #2 are merged. This follow-up
+includes the shared-only cleanup that landed after the module merge and pins
+FFI upstream `main` at `97fc94eb5ecd2ed884eda9b5b4bb55430f8248c0`.
+
+ Standalone Mix now requires the shared RLN backend;
 the embedded provider and direct Zerokit v2 dependency are removed. The FFI
 repository is renamed to `logos-co/nim-libp2p-mix-ffi`. Its removal and rename
 commits are published. TCP/QUIC C smoke tests pass with mock backend callbacks.
@@ -138,7 +142,8 @@ passes the remote Nix drift/build check.
 Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
 #4282 contains `9cc5babdd47d07bef396dafb54a367725ecb46e7`; Delivery module #125
 contains `6c9a2f8684a1c81f2e84abe2dc57e6b4e1fb629d` (CI cleanup and the corrected wallet dependency). The FFI shared-only change is published as `67765f6`; repository rename
-`e13dbdc` is the current pin (`logos-co/nim-libp2p-mix-ffi`).
+`e13dbdc` was the renamed-repository pin. The current upstream-main pin is
+`97fc94eb5ecd2ed884eda9b5b4bb55430f8248c0`, with an identical FFI source tree.
 This branch contains the Logos module bridge, current architecture docs, and
 new local-chain network fixture. The complete fresh-host positive and negative fixture passed.
 
@@ -154,8 +159,8 @@ match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 - [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
 - [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)
-- [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/2)
-- [Logos module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2)
+- [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/2) — merged.
+- [Logos module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2) — merged before the shared-only cleanup.
 - [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436) is **closed**.
   The shared-RLN integration does not require it to merge. The standalone FFI
   no longer references its fork.

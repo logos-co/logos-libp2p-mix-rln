@@ -5,8 +5,8 @@
     logos-module-builder.url = "github:logos-co/logos-module-builder/0.3.0";
     liblogos_rln_module.url = "git+https://github.com/richard-ramos/logos-rln-modules?ref=feat/mix-wire-binding&rev=4f1f610a05d6108a88b6b9a4f365f6830365ae21&dir=logos-rln-module";
 
-    # Standalone facade with shared-provider support; PR #2 is under review.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/e13dbdc513975e61369523ca5035c4eca564ab64";
+    # Pin the standalone facade from upstream main.
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/97fc94eb5ecd2ed884eda9b5b4bb55430f8248c0";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
