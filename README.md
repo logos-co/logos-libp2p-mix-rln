@@ -16,7 +16,7 @@ wallets and memberships, including the no-direct-fallback check. See
 | Component | Owns |
 | --- | --- |
 | This Logos module | Public API, configuration, FFI lifecycle, asynchronous calls to the RLN module, coordination events and queues. |
-| `nim-libp2p-mix-rln-ffi` | The standalone libp2p switch, Mix protocol, and proof adapter. |
+| `nim-libp2p-mix-ffi` | The standalone libp2p switch, Mix protocol, and proof adapter. |
 | `nim-libp2p-mix` | Sphinx encryption and forwarding, route selection, delays, cover traffic, and single-use reply blocks (SURBs). |
 | Mix RLN adapter | The existing Mix proof encoding, epoch checks, backend calls, and proof-metadata coordination. |
 | `liblogos_rln_module` | Credentials, scoped membership, cryptographic proofs, verification, and durable message-id allocation. |
@@ -47,7 +47,7 @@ flowchart TB
 ```
 
 The standalone module does not require `logos-libp2p-module`: it creates its
-own switch. It requires the shared RLN module by default. It does not require
+own switch. It requires the shared RLN module. It does not require
 Delivery as a module dependency, but a deployment must provide coordination.
 The Logos Mixnet profile calls for RLN-protected Relay coordination; Delivery
 is the integration used here. An arbitrary transport carrying the same bytes
@@ -78,7 +78,7 @@ enabled and used for application sending or exit handling.
 ### Full sending-to-receiving path
 
 Applications use Delivery's existing `send()` method. Configure its anonymity
-level as `Required` and enable native Mix with the shared proof provider.
+level as `Required` and enable native Mix with the shared RLN backend.
 `Required` must fail to deliver when a Mix route is unavailable; it must not
 fall back to direct application Lightpush or Relay publication.
 
@@ -231,7 +231,7 @@ capacity guarantee. Intermediate-only mode still sends cover packets.
    stopping its shared backend; the host stops a shared backend only after all
    consumers have stopped.
 
-The module constructor defers shared-provider node creation until the host
+The module constructor defers node creation until the host
 and backend are available. Loading the module, or setting the configuration
 environment variable, does not replace the explicit `createNode()` call.
 `ok()` reports initialization errors, not network readiness or active membership.
@@ -245,7 +245,6 @@ Replace its registry placeholder with the real registry ID:
   "transport": "tcp",
   "mix": {"allowSend": false, "allowExit": false, "cover": {"rateFraction": 0.7}},
   "rln": {
-    "provider": "module",
     "registryId": "<registry-id>",
     "rlnIdentifierHex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000",
     "epochDurationSeconds": 10,
@@ -310,7 +309,7 @@ Discovery or validate a peer's registry membership merely by adding its record.
 | Diagnostics | `collectMetrics` currently returns an empty map. |
 
 `getNodeInfo` accepts `Version`, `PeerId`, `Multiaddrs`, `MixPublicKey`, and
-`RlnMembershipIndex`. Shared-mode registration delegates to the backend using
+`RlnMembershipIndex`. Registration delegates to the backend using
 `registrationOptionsJson`; callers must also observe membership activation.
 For the LEZ registry, options can include `[{"key":"rate_limit","value":"100"}]`.
 
@@ -328,11 +327,11 @@ uses native Delivery Mix rather than a host manually wrapping `sendMixMessage`.
 
 ```sh
 nix build .#lgx --no-write-lock-file
-nix run .#tests --no-write-lock-file
+nix build .#unit-tests --no-write-lock-file
 ```
 
 The unit target runs configuration tests, including default intermediate roles
-and shared-provider validation. Dependencies span multiple open PRs; consult
+and rejection of removed embedded-provider settings. Dependencies span multiple open PRs; consult
 [WORK_SUMMARY.md](WORK_SUMMARY.md) before assuming all remote pins include the
 latest local integration changes.
 
@@ -355,10 +354,6 @@ wallets, active scoped memberships, protected metadata exchange, exact payload
 delivery, and the no-direct-fallback check. Tested revisions and logs are
 recorded in the work summary.
 
-Older `standalone-e2e`, `multi-node-e2e`, `delivery-coordination-e2e`, and
-`delivery-edge-coordination-e2e` fixtures exercise the legacy embedded provider.
-They do not establish shared-backend or native Delivery Mix interoperability.
-
 ### Registry wallet compatibility
 
 Use the pinned registry wallet dependency. Earlier builds used a fee cap based
@@ -375,10 +370,13 @@ and wallet logs when activation fails.
 
 ## Migration limits
 
-The legacy `rln.provider="embedded"` remains for transition tests. Its local
-keystore/tree/resource options and membership announcement topic apply only
-to that provider. It uses a different zerokit generation and nullifier
-construction; do not mix legacy and shared-provider nodes in one network.
+The shared RLN module is the only proof backend. The provider selector, local
+keystore/password/tree/resource settings, membership-announcement topic, and
+`RlnMembershipRegistered` event have been removed. Old JSON settings are
+rejected instead of silently selecting a different backend. Configure wallet
+and credential storage on the registry/RLN modules, then query membership
+activation through their APIs. Direct FFI consumers must rebuild against the
+new generated C header.
 
 Production work still includes deployment identifiers/topics, service discovery,
 coordination delivery/recovery policy, complete specification conformance review,

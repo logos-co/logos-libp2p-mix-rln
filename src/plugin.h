@@ -62,7 +62,6 @@ public:
     // Known event names:
     //   "IncomingMixMessage" — {proto, payload: byte[], surb: byte[]}
     //   "RlnPublishRequested" — {contentTopic, payload: byte[]}
-    //   "RlnMembershipRegistered" — {index, root: byte[]}
     std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
     // Health / status ------------------------------------------------------
