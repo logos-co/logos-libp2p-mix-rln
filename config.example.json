@@ -1,24 +1,24 @@
 {
-  "addrs": ["/ip4/0.0.0.0/tcp/9100"],
+  "addrs": [
+    "/ip4/0.0.0.0/tcp/9100"
+  ],
   "transport": "tcp",
   "maxConnections": 50,
   "maxConnsPerPeer": 2,
-
   "mix": {
     "allowSend": false,
     "allowExit": false,
-    "cover": { "rateFraction": 0.7 }
+    "cover": {
+      "rateFraction": 0.7
+    }
   },
-
   "rln": {
-    "keystorePath": "./keystore.json",
-    "keystorePassword": "changeme",
-    "treePath": "./rln-tree",
-    "rlnResourcesPath": "./rln-resources",
-    "epochDurationSeconds": 1,
-    "maxEpochGap": 20,
+    "provider": "module",
+    "registryId": "<registry-id>",
+    "rlnIdentifierHex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f763100000000000000",
+    "epochDurationSeconds": 10,
+    "maxEpochGap": 3,
     "userMessageLimit": 100,
-    "membershipContentTopic": "/mix/rln/membership/v1",
-    "proofMetadataContentTopic": "/mix/rln/metadata/v1"
+    "proofMetadataContentTopic": "/mix/1/metadata/proto"
   }
 }

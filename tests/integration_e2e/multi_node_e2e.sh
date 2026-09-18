@@ -94,6 +94,9 @@ start_daemon() {
     local idx="$1" module="${2:-libp2p_mix_rln_module}"
     local home="$ROOT/node$idx"
     mkdir -p "$home/modules"
+    for dep in "${LEZ_RLN_LGX_DIR:?}" "${RLN_LGX_DIR:?}"; do
+        "$LGPM_BIN" --modules-dir "$home/modules" --allow-unsigned install --file "$(pick_lgx "$dep")" >/dev/null
+    done
     if [[ "$module" == libp2p_mix_rln_module ]]; then
         HOME="$home" "$LGPM_BIN" --modules-dir "$home/modules" --allow-unsigned \
             install --file "$LGX" >/dev/null
@@ -138,9 +141,9 @@ for i in $(seq 0 $((N - 1))); do
     cfg=$(jq -nc --arg addr "/ip4/127.0.0.1/tcp/${DAEMON_PORTS[$i]}" \
         --argjson sender "$([[ "$i" == 0 ]] && echo true || echo false)" \
         --argjson exit "$([[ "$i" == "$((N - 1))" ]] && echo true || echo false)" \
-        '{addrs:[$addr], transport:"tcp", mix:{allowSend:$sender,allowExit:$exit,cover:{rateFraction:0.01}}}')
+        '{addrs:[$addr], transport:"tcp", rln:{provider:"embedded"}, mix:{allowSend:$sender,allowExit:$exit,cover:{rateFraction:0.01}}}')
     if [[ -n "$DELIVERY_LGX" ]]; then
-        cfg=$(jq -c '.rln = {membershipContentTopic:"/mix/1/membership/proto",proofMetadataContentTopic:"/mix/1/metadata/proto"}' <<<"$cfg")
+        cfg=$(jq -c '.rln += {membershipContentTopic:"/mix/1/membership/proto",proofMetadataContentTopic:"/mix/1/metadata/proto"}' <<<"$cfg")
     fi
     if ! success "$i" createNode "$cfg"; then
         echo "FAIL: createNode on node $i" >&2; fail=1; break

@@ -2,14 +2,11 @@
   description = "Logos Mix Intermediate Module (libp2p + Mix + RLN)";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/0.3.0";
+    liblogos_rln_module.url = "git+https://github.com/richard-ramos/logos-rln-modules?ref=feat/mix-wire-binding&rev=f501685dd8d65452508cac77db6fae967feec6ef&dir=logos-rln-module";
 
-    # The Nim FFI facade lives at logos-co/nim-libp2p-mix-rln-ffi. Building
-    # it currently requires the two zerokit v2 overrides its README documents
-    # (blocked on zerokit PR #436) — see this repo's README for the full
-    # command.
-    # Pin the standalone facade while its follow-up PR is under review.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi/53f4e0b9905743301c57cb105ee66d14250b8397";
+    # Standalone facade with shared-provider support; PR #2 is under review.
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-rln-ffi/b2008a262f733c6600c24f29f196d3198de11946";
 
     # For `nix run .#standalone-e2e`. Kept out-of-tree because they only
     # matter for the runtime e2e; unit tests / library builds don't need them.
@@ -63,12 +60,16 @@
             pkgs.coreutils pkgs.gnugrep pkgs.bash pkgs.iproute2 pkgs.jq
           ];
           lgxDir = "${module.packages.${system}.lgx}";
+          rlnLgxDir = "${inputs.liblogos_rln_module.packages.${system}.lgx}";
+          lezRlnLgxDir = "${inputs.liblogos_rln_module.inputs.liblogos_lez_rln_module.packages.${system}.lgx}";
           logoscoreBin = "${inputs.logoscore-cli.packages.${system}.default}/bin/logoscore";
           lgpmBin = "${inputs.package-manager.packages.${system}.cli}/bin/lgpm";
           standaloneE2eScript = ./tests/integration_e2e/standalone_e2e.sh;
           standaloneE2eApp = pkgs.writeShellScript "standalone-e2e" ''
             export PATH=${pkgs.lib.makeBinPath (e2eRuntime ++ [ pkgs.xxd ])}:$PATH
             export LIBP2P_MIX_RLN_LGX_DIR=${lgxDir}
+            export RLN_LGX_DIR=${rlnLgxDir}
+            export LEZ_RLN_LGX_DIR=${lezRlnLgxDir}
             export LOGOSCORE_BIN="''${LOGOSCORE_BIN:-${logoscoreBin}}"
             export LGPM_BIN="''${LGPM_BIN:-${lgpmBin}}"
             exec ${standaloneE2eScript} "$@"
@@ -77,6 +78,8 @@
           multiNodeE2eApp = pkgs.writeShellScript "multi-node-e2e" ''
             export PATH=${pkgs.lib.makeBinPath (e2eRuntime ++ [ pkgs.xxd ])}:$PATH
             export LIBP2P_MIX_RLN_LGX_DIR=${lgxDir}
+            export RLN_LGX_DIR=${rlnLgxDir}
+            export LEZ_RLN_LGX_DIR=${lezRlnLgxDir}
             export LOGOSCORE_BIN="''${LOGOSCORE_BIN:-${logoscoreBin}}"
             export LGPM_BIN="''${LGPM_BIN:-${lgpmBin}}"
             exec ${multiNodeE2eScript} "$@"

@@ -15,6 +15,7 @@ logos_module(
         src/plugin.h
         src/config.h
         src/plugin.cpp
+        src/rln_bridge.cpp
     EXTERNAL_LIBS
         libp2p_mix_rln
     # The nim-ffi generated header (lib/libp2p_mix_rln.h) uses CBOR marshalling,

@@ -25,6 +25,10 @@ LOGOS_TEST(defaults_match_lip_mixnet) {
     LOGOS_ASSERT_FALSE(o.mix.allowSend);
     LOGOS_ASSERT_FALSE(o.mix.allowExit);
     LOGOS_ASSERT_EQ(o.maxConnsPerPeer, 2);
+    LOGOS_ASSERT_EQ(o.rln.provider, std::string("module"));
+    LOGOS_ASSERT_EQ(o.rln.epochDurationSeconds, 10);
+    LOGOS_ASSERT_EQ(o.rln.maxEpochGap, 3);
+    LOGOS_ASSERT_EQ(o.rln.userMessageLimit, 100);
     // The RLN Relay coord topics have placeholder defaults until the spec pins them.
     LOGOS_ASSERT_EQ(o.rln.membershipContentTopic, std::string("/mix/rln/membership/v1"));
     LOGOS_ASSERT_EQ(o.rln.proofMetadataContentTopic, std::string("/mix/rln/metadata/v1"));
@@ -89,3 +93,16 @@ LOGOS_TEST(endpoint_roles_are_independent_opt_ins) {
         R"({"mix":{"allowExit":1}})", ok);
     LOGOS_ASSERT_FALSE(ok);
 }
+
+LOGOS_TEST(shared_rln_scope_is_explicit_and_unknown_providers_fail) {
+    bool ok = false;
+    auto options = Libp2pMixRlnModuleOptions::fromJson(
+        R"({"rln":{"registryId":"logos:local:registry","registrationOptionsJson":"[]"}})", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    LOGOS_ASSERT_EQ(options.rln.registryId, std::string("logos:local:registry"));
+    LOGOS_ASSERT_EQ(options.rln.provider, std::string("module"));
+    Libp2pMixRlnModuleOptions::fromJson(R"({"rln":{"provider":"other"}})", ok);
+    LOGOS_ASSERT_FALSE(ok);
+}
+
+LOGOS_TEST_MAIN()
