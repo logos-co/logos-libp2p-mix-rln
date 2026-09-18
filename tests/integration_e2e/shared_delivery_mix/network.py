@@ -115,7 +115,8 @@ def start_delivery(node, peers, *, service=False):
     config = dict(logLevel="INFO", listenAddress="127.0.0.1", tcpPort=port,
                   nat="extip:127.0.0.1", extMultiAddrs=[f"/ip4/127.0.0.1/tcp/{port}"],
                   extMultiAddrsOnly=True, clusterId=198, numShardsInNetwork=1,
-                  relay=service, filter=service, lightpush=service, store=False,
+                  relay=service or node in INTERMEDIATES,
+                  filter=service, lightpush=service, store=False,
                   peerExchange=False, discv5Discovery=False, rendezvous=False,
                   reliabilityEnabled=True, staticnodes=peers)
     # All test hosts use loopback; keep the production per-IP limit out of this topology.
