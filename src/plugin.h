@@ -29,6 +29,7 @@
 #include <libp2p_mix_rln.h>
 
 #include "config.h"
+#include "rln_bridge.h"
 
 // Timeouts (milliseconds) for the sync-over-async libp2p_mix_rln bridge.
 // Sized like logos-libp2p-module — long enough for a network create + RLN
@@ -149,6 +150,7 @@ public:
     // members. Do not call from other modules.
     // ------------------------------------------------------------------
 
+    MixRlnBridge m_rlnBridge;
     LibMixRlnCtx* m_ctx = nullptr;
     Libp2pMixRlnModuleOptions m_options;
 

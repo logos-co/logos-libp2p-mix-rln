@@ -1,122 +1,119 @@
-# Standalone Mix-RLN module: current work summary
+# Mix / Delivery / shared RLN work summary
 
-Updated 2026-09-17. This document describes the current implementation and
-remaining work. See [README.md](README.md) for the detailed architecture,
-configuration, API, and deployment examples.
+Updated: 2026-09-17. **The shared-RLN migration is still in progress.** Core
+Mix and adapter changes are pushed; the complete Delivery/module integration
+is not ready yet. This file distinguishes verified work from remaining work.
 
-## Architecture and behavior
+## Accepted architecture
 
-The module runs a standalone Mix intermediate node. Its Nim FFI owns a
-libp2p switch with core Mix and the bundled Mix-RLN spam-protection plugin.
-Sphinx payloads travel over IPv4 TCP or QUIC; zerokit provides the RLN
-cryptography. Logos Delivery is not a runtime dependency.
+- The standalone module owns its libp2p switch and defaults to an intermediate
+  role: `mix.allowSend=false`, `mix.allowExit=false`. Endpoint capabilities
+  remain deliberate opt-ins.
+- Applications send through Delivery's existing `send()` API with anonymity
+  `Required`. Delivery's native Mix implementation creates the Sphinx route.
+  Standalone intermediates forward it; a Delivery Mix exit handles Lightpush.
+  The response returns through a SURB; Relay/Filter delivers the application
+  message onward to the recipient. `Required` must never fall back to a
+  direct application send.
+- Both native Delivery Mix and standalone Mix call `liblogos_rln_module` for
+  proofs and verification. The backend owns credentials, registry membership,
+  durable message-id allocation, and cryptography. The Mix adapter owns the
+  existing packet encoding and proof-metadata coordination.
+- Mix and Relay RLN use separate application scopes. A host sharing one RLN
+  backend configures all its registries and owns its lifetime. Delivery's
+  preset gains `manage-backend=false` for this deployment.
+- Standalone Mix coordination can use a separately managed Delivery node.
+  Those two switches have different peer IDs and routing tables. Loading
+  Delivery alone does not connect this bridge.
+- The merged Logos Mixnet specification requires RLN-protected Relay
+  coordination. Its current profile uses 10-second epochs, 100 messages per
+  epoch, accepted epoch gap 3, and root window 5. Deployment identifiers and
+  topics still need agreement. Generic host coordination is not, by itself,
+  evidence of Logos Mixnet conformance.
 
-Application endpoint capabilities are independent, create-time opt-ins:
+## Implemented locally
 
-| Setting | Default | Enables |
-| --- | --- | --- |
-| `mix.allowSend` | `false` | Application sends and explicit SURB replies. |
-| `mix.allowExit` | `false` | Receiver mounting and local/external application exit delivery. |
-
-Intermediate forwarding and cover loops remain active with both options
-disabled. Exit policy is enforced by the receiving core node, independently
-of peer advertisements. Peer records carry `exitEnabled`, and route selection
-reserves an eligible exit before choosing intermediates. The standalone FFI
-sets the restrictive defaults explicitly; native core-library callers retain
-`allowExit=true` for compatibility.
-
-The host supplies two things:
-
-- **Peer records:** obtain `getLocalMixPeerRecord` from participating nodes and
-  install records with `addMixPeer`. `listMixPeers` reports the routing pool;
-  automatic discovery is not implemented.
-- **RLN coordination:** forward membership and proof-metadata frames from
-  `RlnPublishRequested` or `drainCoordBacklog` through a transport, then submit
-  received frames with `deliverCoordFrame`. Forwarding must continue after
-  initial membership registration.
-
-A separate Delivery module can provide that coordination transport, either
-as a Relay node or a light client using Lightpush/Filter service nodes.
-When used, Delivery and Mix have separate switches, peer IDs,
-peer sets, and lifecycles. Proof generation and verification stay inside the
-Mix-RLN plugin; there is no external RLN-module proof provider.
-
-## Active PRs and dependency pins
-
-PR status was checked on the update date. All changes below are pushed.
-
-| PR | Status | Purpose |
-| --- | --- | --- |
-| [Core Mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58) | Open, targets `master` | Exit policy and capability storage, shared route selection, cover control, SURB ownership/replies, and compatible dependencies. |
-| [Mix-RLN plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) | Draft | Align libp2p and core Mix dependencies with the standalone facade. |
-| [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436) | Draft | Provide the stateless RLN build and C ABI required by the plugin. |
-| [FFI #2](https://github.com/logos-co/nim-libp2p-mix-rln-ffi/pull/2) | Draft | Own the switch, enforce endpoint opt-ins, and expose host coordination and routing APIs. |
-| [Module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2) | Draft | Package the FFI, expose the Logos API, and document/test the standalone deployment. |
-
-Current consumed revisions:
-
-| Dependency | Revision |
+| Repository / checkout | Change |
 | --- | --- |
-| FFI, pinned by this module | `53f4e0b9905743301c57cb105ee66d14250b8397` |
-| Core Mix, pinned by both FFI and plugin | `57def1fef5763fc4cc27a386276cd65165eeb489` |
-| Mix-RLN plugin, pinned by FFI | `dc820fd676fa6c44c1e8847e29afcd2bc39200fe` |
-| Zerokit, locked by FFI | `a263930af8a7bd95804e1e49859050afbf2dbfd5` |
-| Delivery module v0.2.1, optional E2E only | `b8b9ac2f4667bc63644b2116f64a07aa30cfd3ef` |
+| Core Mix — `/tmp/mix-role-policy` | Async proof generation/verification; deferred cover proof allocation for durable providers; cancellation of pending proof work. Existing synchronous providers remain supported. |
+| Mix plugin — `/tmp/mix-plugin-review` | Shared RLN API adapter, Mix proof encoding, metadata coordination, bounded asynchronous request transport. |
+| Shared RLN — `/tmp/mix-shared-rln` | Reconstruct an omitted Mix external nullifier from scope and timestamp, verify the binding, and return it for coordination. Canonical proof handling is preserved. |
+| Standalone FFI — `/home/r/logos-co/nim-libp2p-mix-rln-ffi` | Shared-provider configuration, async request/reply events, backend membership calls, shutdown cancellation. |
+| This module | C++ async backend bridge; shared provider is the default; RLN backend declared as a dependency. |
+| Native Delivery — `/tmp/mix-delivery-native-interop` | Install the same adapter in native Mix, publish/receive coordination outside `send(Required)`, expose Mix peer records, and keep Mix/Relay callback lifetimes separate. |
+| Delivery module — `/tmp/mix-delivery-api-interop` | Forward native Mix RLN requests to the backend, expose peer record methods, support host-owned backend lifecycle. |
 
-Core #58's head is `470177c7a377222d89621b32fdc5087de7350f7a`.
-Its final commit only refreshes core's `nix/deps.nix`; the FFI uses its own
-dependency snapshot and pins the preceding, validated runtime commit above.
-The published FFI revision evaluates to the same Nix library derivation used
-by the tested module package. A local FFI override is not required.
+The legacy embedded Mix RLN provider remains during migration. It uses a
+different zerokit generation and external-nullifier construction; mixing
+legacy and shared-provider participants is not a supported deployment.
 
-[Delivery #4181](https://github.com/logos-messaging/logos-delivery/pull/4181)
-remains a separate draft for optional spam-protection injection. It is useful
-independently but is not a prerequisite for this module. The redundant
-[core #46](https://github.com/logos-co/nim-libp2p-mix/pull/46) experiment and the
-superseded Delivery adapter/test PRs
-[#4182](https://github.com/logos-messaging/logos-delivery/pull/4182) and
-[#4185](https://github.com/logos-messaging/logos-delivery/pull/4185) are closed,
-with explanations. None belongs in the merge path for the standalone stack.
+## Verification
 
-## Validation and compatibility
+Completed locally:
 
-The implementation was validated on 2026-09-17:
+- Core Mix: **165 unit tests** and **34 component tests** passed after async
+  integration and cancellation cleanup, including the cancellation regression
+  assertion.
+- Shared adapter: **3 tests passed**, covering asynchronous scoped calls,
+  quota/backend failures, malformed replies, duplicate metadata, cancellation,
+  and late/duplicate responses.
+- Shared RLN backend: **8 real-cryptography validation tests passed**, including
+  omitted-nullifier reconstruction and wrong-scope/wrong-signal rejection.
+- Delivery RLN transport: **10 tests passed**, including independent callback
+  lifetimes, duplicate response rejection, cancellation, and the pending limit.
+- Standalone FFI smoke test passed over **TCP and QUIC** with the pinned core
+  and adapter revisions. Standalone C++ module: **6 configuration tests passed**.
+- Native Delivery dynamic and static libraries built. Delivery C++ module:
+  **61 tests passed**. Delivery Mix sending regression suite: **13 tests passed**,
+  including rejection of shared Mix without protected Relay coordination.
+- Both Mix and Delivery LGX bundles built. The isolated local sequencer and
+  registry are provisioned; the LEZ wallet runtime build is still running.
 
-| Check | Result and scope |
-| --- | --- |
-| Core unit tests | 165 passed. |
-| Core component tests | 33 passed, including local/external exit policy, forged advertisements, cover loops, and SURB ownership. |
-| Module configuration tests | Five passed using the Logos test-framework runner. |
-| Core Nix build | Passed after regenerating the dependency snapshot. |
-| Nim routing tests | Plain and RLN-protected routing passed. |
-| C API tests | TCP and QUIC passed: key validation, stable prefixed-key identity, address validation, peer listing, role restrictions, coordination, live cover updates, and SURB replies. |
-| Module package | `.lgx` build and single-daemon lifecycle/validation test passed. |
-| Five-daemon test | Peer listing, host-mediated membership synchronization, and Sphinx/RLN payload delivery passed with sender-only, intermediate-only, and exit-only roles. |
-| Delivery coordination E2E | Five separate Relay nodes passed membership and proof-metadata frames through real receive events into Mix. All 20 remote membership deliveries and the Sphinx/RLN application payload were verified; Mix and Delivery peer IDs were distinct. Dropping membership publications made the fixture fail before routing. |
-| Delivery light-client E2E | Five Delivery clients with Relay disabled used two separate Relay/Lightpush/Filter service nodes. Membership, proof metadata, and Mix payload delivery passed. Disabling Filter or removing the Relay link failed readiness before registration. |
+Not yet verified:
 
-These are completed local checks, not a claim that every remote CI platform
-is green. `nix run .#delivery-coordination-e2e` and
-`nix run .#delivery-edge-coordination-e2e` exercise controlled local Relay and
-light-client coordination; the other fixtures use host test buses. This does
-not establish production synchronization or partition recovery. Routing fixtures
-use reduced cover rates and do not establish production performance at the default rate.
-
-The public configuration now contains only settings applied by the runtime.
-Unused discovery/bootstrap, inbound/outbound connection-limit, and RLN
-fields were removed. Direct C consumers must rebuild against the generated
-header because the configuration struct changed. Malformed configured
-private keys now fail creation instead of silently generating a new identity.
+- Full `Delivery.send(Required)` → standalone intermediates → Delivery exit →
+  recipient, with real shared-backend memberships and protected coordination.
+- The corresponding no-direct-fallback negative end-to-end test.
+- Final pinned builds, module tests, updated architecture examples, and PR CI.
 
 ## Remaining work
 
-1. Merge core #58 and zerokit #436, then repin the plugin and merge #22.
-   Update the FFI's Nimble/Nix pins to merged revisions and merge FFI #2;
-   repin this module and merge module #2. Delivery PRs are outside this path.
-2. Provide production coordination: distributed membership-index allocation,
-   reliable publication, and membership-history synchronization for late
-   joiners. Current controlled setup registers members sequentially.
-3. Integrate host-managed discovery and validate the chosen coordination
-   backend under deployment conditions beyond the local Relay E2E.
-4. Validate sustained routing and proof-generation capacity at intended
-   deployment parameters, including the default cover rate.
+1. Finish library/module builds and regression checks; fix any remaining issues.
+2. Reuse `logos-rln-e2e`'s local sequencer, wallet funding, and registry tooling
+   for the new topology. Its old Mix scenario is quarantined and is not a
+   usable acceptance test. The isolated checkout at `/tmp/mix-local-lez` has built and provisioned
+   a local registry; its module wallet runtime is still building.
+3. Run the complete positive and negative message-path tests.
+4. Update README diagrams, startup/configuration examples, and test commands
+   to describe the verified architecture. Remove migration-only duplication
+   where the verified replacement allows it.
+5. Finish publication and final pinned builds. The Delivery and shared-backend
+   draft PRs are open; update their descriptions and this file with the final
+   network results.
+
+## PRs and publication state
+
+Core Mix #58 now includes commit `29eaaf1d6adb57fa95e70d0c577cf6c4855598d9`.
+Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
+#4282 contains `ab951c46b63c3d066f9c18ecf82a3598220291c3`; Delivery module #125
+contains `429096cbcdaea67a0cdb827ce62e8ed37ba05b83`. The FFI shared-provider change is committed as `b2008a2`.
+This branch contains the Logos module bridge, current architecture docs, and
+new local-chain network fixture. The full network run remains pending.
+
+The shared backend branch is at `f501685dd8d65452508cac77db6fae967feec6ef`,
+based on RLN modules main `6e3c6c47d4d1ae7efa635a61a171891c23967fd8` (0.8.2).
+This replaces the older `feat/lip-alignment` baseline so local-chain layouts
+match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
+
+- [Core Mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58)
+- [Mix plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22)
+- [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
+- [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
+- [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)
+- [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-rln-ffi/pull/2)
+- [Logos module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2)
+- [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436), needed by the
+  legacy embedded provider.
+
+The previous standalone and optional Delivery-coordination tests passed for
+that baseline. They do not prove the new native Delivery Mix path.

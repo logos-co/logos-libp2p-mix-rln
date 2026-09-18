@@ -2,7 +2,7 @@
     "name": "libp2p_mix_rln_module",
     "display_name": "Logos Mixnet (libp2p + Mix + RLN)",
     "version": "0.1.0",
-    "description": "Standalone Logos mix intermediate node: libp2p transport, Sphinx-based mix routing, RLN per-hop rate limiting. Implements LIP LOGOS-MIXNET.",
+    "description": "Standalone Logos mix intermediate node: libp2p transport, Sphinx-based mix routing, RLN per-hop rate limiting. Targets LIP LOGOS-MIXNET; see README for interoperability and deployment requirements.",
     "author": "Logos Core Team",
     "type": "core",
     "interface": "universal",
@@ -11,13 +11,13 @@
     },
     "category": "protocol",
     "main": "libp2p_mix_rln_module_plugin",
-    "dependencies": [],
+    "dependencies": ["liblogos_rln_module"],
     "include": ["libp2p_mix_rln.so", "libp2p_mix_rln.dylib", "libp2p_mix_rln.dll"],
     "capabilities": [],
 
     "config": {
         "env": "LIBP2P_MIX_RLN_MODULE_CONFIG",
-        "description": "JSON config — inline, or a path to a JSON file — overlaid onto the default options when the module is loaded. Every key is optional. LIP LOGOS-MIXNET fixes several protocol parameters (path length, Sphinx sizes, cover-traffic strategy); those are not configurable. Parameters marked TBD in LIP LOGOS-MIXNET are exposed here with placeholder defaults that MUST be pinned before mainnet use.",
+        "description": "JSON config — inline, or a path to a JSON file — overlaid onto the default options when the module is loaded. Module RLN mode requires a registryId and a started shared RLN backend. LIP LOGOS-MIXNET fixes several protocol parameters (path length, Sphinx sizes, cover-traffic strategy); those are not configurable. Parameters marked TBD in LIP LOGOS-MIXNET are exposed here with placeholder defaults that MUST be pinned before mainnet use.",
         "schema": {
             "addrs": "array<multiaddr string> — IPv4 libp2p listen addresses",
             "transport": "string — \"tcp\" | \"quic\"",
@@ -35,13 +35,17 @@
             },
 
             "rln": {
+                "provider": "string — module (default) or embedded (legacy test mode)",
+                "registryId": "string — shared RLN registry scope, required in module mode",
+                "rlnIdentifierHex": "string — 32-byte application identifier shared by every Mix participant",
+                "registrationOptionsJson": "string — JSON RegistryOptions array; default []",
                 "keystorePath": "string — path to the RLN keystore file",
                 "keystorePassword": "string — password for the RLN keystore",
                 "treePath": "string — path to the persisted Merkle tree",
                 "rlnResourcesPath": "string — path to zerokit precomputed resources (verification key, circom .zkey)",
-                "epochDurationSeconds": "int — RLN epoch length. LIP LOGOS-MIXNET: TBD; placeholder default 1.",
-                "maxEpochGap": "int — accepted epoch drift. LIP LOGOS-MIXNET: TBD; placeholder default 20.",
-                "userMessageLimit": "int — per-user message cap per epoch. LIP LOGOS-MIXNET: TBD; placeholder default 100.",
+                "epochDurationSeconds": "int — RLN epoch length. LIP LOGOS-MIXNET default 10.",
+                "maxEpochGap": "int — accepted epoch drift. LIP LOGOS-MIXNET default 3.",
+                "userMessageLimit": "int — per-user message cap per epoch. LIP LOGOS-MIXNET default 100.",
                 "membershipContentTopic": "string — RLN Relay content topic for membership. LIP LOGOS-MIXNET: TBD; placeholder \"/mix/rln/membership/v1\".",
                 "proofMetadataContentTopic": "string — RLN Relay content topic for proof metadata. LIP LOGOS-MIXNET: TBD; placeholder \"/mix/rln/metadata/v1\"."
             }

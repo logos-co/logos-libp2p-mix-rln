@@ -5,7 +5,7 @@
 # the .lgx bundle, and the logoscore module loader together — none of which
 # are exercised by the FFI-level C smoke test.
 #
-# Required env: LIBP2P_MIX_RLN_LGX_DIR
+# Required env: LIBP2P_MIX_RLN_LGX_DIR, RLN_LGX_DIR, LEZ_RLN_LGX_DIR
 # Optional env: LOGOSCORE_BIN (default: logoscore), LGPM_BIN (default: lgpm)
 #
 # Adapted from vacp2p/logos-libp2p-module's standalone_e2e.sh.
@@ -70,6 +70,9 @@ cd "$WORK"
 mkdir -p modules
 
 "$LGPM_BIN" --modules-dir ./modules --allow-unsigned install --file "$LGX"
+for dep in "${LEZ_RLN_LGX_DIR:?}" "${RLN_LGX_DIR:?}"; do
+    "$LGPM_BIN" --modules-dir ./modules --allow-unsigned install --file "$(pick_lgx "$dep")"
+done
 "$LGPM_BIN" --modules-dir ./modules list
 
 "$LOGOSCORE_BIN" -D -m ./modules > logs.txt 2>&1 &
@@ -105,12 +108,9 @@ check_nonempty() {
     fi
 }
 
-# The mix-rln module's constructor auto-creates a node from the load-time
-# config, but here we haven't set LIBP2P_MIX_RLN_MODULE_CONFIG, so that
-# auto-create fails and the ctx is null. Recreate explicitly with a real
-# listen port.
+# Explicitly select the legacy provider for this lifecycle regression.
 echo "----- createNode (bind tcp/$PORT) -----"
-config=$(jq -nc --arg addr "/ip4/127.0.0.1/tcp/$PORT" '{addrs:[$addr], transport:"tcp"}')
+config=$(jq -nc --arg addr "/ip4/127.0.0.1/tcp/$PORT" '{addrs:[$addr], transport:"tcp", rln:{provider:"embedded"}}')
 if success createNode "$config"; then
     echo "ok: createNode accepted"
 else
