@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Real Delivery send(Required), standalone intermediates, and shared RLN backend."""
 import base64
-import concurrent.futures
 import json
 import os
 from pathlib import Path
@@ -81,10 +80,13 @@ def start_backend(node):
     call(node, RLN, "start", json.dumps(config))
     scopes = [RELAY_SCOPE] + ([MIX_SCOPE] if node in MIX_NODES else [])
     for scope in scopes:
-        call(node, RLN, "register_membership", REGISTRY, scope,
-             json.dumps([{"key": "rate_limit", "value": "100"}]))
+        print(f"{node}: registering {scope}", flush=True)
+        membership = call(node, RLN, "register_membership", REGISTRY, scope,
+                          json.dumps([{"key": "rate_limit", "value": "100"}]))
         def active():
-            state = call(node, RLN, "get_membership_state", REGISTRY, scope)
+            records = call(node, RLN, "get_memberships", REGISTRY)["memberships"]
+            state = next(item for item in records
+                         if item["membership_hash"] == membership["membership_hash"])
             if state.get("state") == "failed":
                 raise AssertionError(f"{node}: registration failed: {state}")
             return state.get("state") in ("active", "grace_period")
@@ -168,8 +170,9 @@ def pump():
 
 
 def main():
-    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
-        list(pool.map(start_backend, NODES))
+    # Registry setup shares on-chain state; confirm each registration before the next.
+    for node in NODES:
+        start_backend(node)
     exit_address = start_delivery("exit", [], service=True)
     relay_address = start_delivery("relay", [exit_address], service=True)
     for node in ("sender", *INTERMEDIATES, "receiver"):
@@ -183,6 +186,7 @@ def main():
                           "proofMetadataContentTopic": META_TOPIC}}
         call(node, MIX, "createNode", json.dumps(config))
         call(node, MIX, "start")
+        print(f"{node}: shared-RLN intermediate started", flush=True)
     records = {node: call(node, MIX if node in INTERMEDIATES else DELIVERY,
                           "getLocalMixPeerRecord") for node in MIX_NODES}
     for node in INTERMEDIATES:

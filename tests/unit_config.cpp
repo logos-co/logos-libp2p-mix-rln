@@ -26,6 +26,7 @@ LOGOS_TEST(defaults_match_lip_mixnet) {
     LOGOS_ASSERT_FALSE(o.mix.allowExit);
     LOGOS_ASSERT_EQ(o.maxConnsPerPeer, 2);
     LOGOS_ASSERT_EQ(o.rln.provider, std::string("module"));
+    LOGOS_ASSERT_EQ(cfg::decodeHex(o.rln.rlnIdentifierHex).size(), size_t(32));
     LOGOS_ASSERT_EQ(o.rln.epochDurationSeconds, 10);
     LOGOS_ASSERT_EQ(o.rln.maxEpochGap, 3);
     LOGOS_ASSERT_EQ(o.rln.userMessageLimit, 100);

@@ -8,7 +8,9 @@ namespace {
 std::string copy(const NimFfiStr& value) {
     return value.data ? std::string(value.data, value.len) : std::string();
 }
-void responseSubmitted(int, const bool*, const char*, void*) {}
+void responseSubmitted(int rc, const bool*, const char* error, void*) {
+    if (rc != 0) fprintf(stderr, "Mix RLN response rejected: %s\n", error ? error : "FFI call failed");
+}
 }
 
 MixRlnBridge::~MixRlnBridge() {

@@ -200,7 +200,9 @@ capacity guarantee. Intermediate-only mode still sends cover packets.
    wallet as required by that registry implementation.
 2. Start the shared backend with the required registries and matching epoch
    parameters. Provision separate Mix and Relay scopes and wait for active
-   memberships. A registration submission can precede chain activation.
+   memberships. A registration submission can precede chain activation. Track
+   its returned `membership_hash` in `get_memberships(registryId)` while pending;
+   scope lookup can be ambiguous until a dedicated membership becomes active.
 3. Start Delivery and subscribe to the metadata topic. When the host owns the
    backend lifecycle, select a Delivery RLN preset with `manage-backend=false`.
 4. Call `createNode(configJson)` on this module, then `start()`.
@@ -225,7 +227,7 @@ Replace its registry placeholder with the real registry ID:
   "rln": {
     "provider": "module",
     "registryId": "<registry-id>",
-    "rlnIdentifierHex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f763100000000000000",
+    "rlnIdentifierHex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000",
     "epochDurationSeconds": 10,
     "maxEpochGap": 3,
     "userMessageLimit": 100,
@@ -246,7 +248,7 @@ Native Delivery Mix uses its own configuration fields:
   "mix": true,
   "anonymityLevel": "Required",
   "mix-rln-registry-id": "<registry-id>",
-  "mix-rln-identifier-hex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f763100000000000000",
+  "mix-rln-identifier-hex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000",
   "mix-rln-metadata-topic": "/mix/1/metadata/proto"
 }
 ```
@@ -286,6 +288,11 @@ Discovery or validate a peer's registry membership merely by adding its record.
 `RlnMembershipIndex`. Shared-mode registration delegates to the backend using
 `registrationOptionsJson`; callers must also observe membership activation.
 For the LEZ registry, options can include `[{"key":"rate_limit","value":"100"}]`.
+
+The module uses SDK worker dispatch for its synchronous methods. The host event
+loop remains free to service asynchronous RLN calls; node operations are
+serialized with a mutex. Blocking the host event loop would deadlock startup
+and proof requests.
 
 Standalone endpoint APIs remain available for compatibility and protocol tests.
 They require the corresponding role opt-in. Mounting an application receiver

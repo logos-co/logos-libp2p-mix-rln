@@ -32,7 +32,7 @@ struct MixOptions {
 struct RlnOptions {
     std::string provider = "module";
     std::string registryId;
-    std::string rlnIdentifierHex = "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f763100000000000000";
+    std::string rlnIdentifierHex = "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000";
     std::string registrationOptionsJson = "[]";
     std::string keystorePath;
     std::string keystorePassword;
