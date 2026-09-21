@@ -27,12 +27,22 @@ ln -s "$PWD/tests/integration_e2e/shared_delivery_mix" \
 "$RLN_E2E_ROOT/run.sh" shared-delivery-mix --target local
 ```
 
+Build the registry bundle through this project's flake so it uses the upstream
+wallet override, then set `LEZ_RLN_LGX` to the resulting `.lgx` file:
+
+```sh
+nix build --impure --out-link result-registry --expr \
+  '(builtins.getFlake ("git+file://" + toString ./.)).inputs.liblogos_rln_module.inputs.liblogos_lez_rln_module.packages.${builtins.currentSystem}.lgx'
+```
+
 The harness owns chain provisioning, daemon logs, and artifact installation.
 Follow its local-target instructions to build the guest programs, host tools,
 and sequencer first. Use an isolated sequencer checkout for this test: the
 harness's host target starts a fresh local chain. An already provisioned local
 chain can instead be selected with the harness's external-target environment
-settings.
+settings. Before registering memberships on a fresh chain, ensure `CLOCK_50`
+has received its first update (block 50 or later). Memberships registered
+against its initial zero timestamp expire when that first update arrives.
 
 The assertions require the exact application payload at the recipient and
 metadata reception by all Mix participants. After stopping the standalone

@@ -121,6 +121,34 @@ Completed locally:
   registry `2f5ba3c`; and wallet `6752be25`. Native Delivery remains `9cc5bab`.
   These end-to-end results predate the subsequent embedded-provider removal.
 
+## Upstream wallet migration (2026-09-21)
+
+The root flake overrides the registry module's wallet input to upstream LEZ
+`f0778a4316daa4065ff18a77f4f98706149c240e`, which contains the configurable
+gas-limit fee-cap fix merged in LEZ #884. The earlier fork pin remains above
+only as a record of the earlier integration runs.
+
+On x86_64-linux, the Mix and registry LGX builds pass, along with all six module
+configuration tests, 49 upstream wallet unit tests, and six wallet FFI tests.
+The original fee-cap regression also passes against upstream's `max_fee_for`:
+2,000,000 gas keeps the 134,400,000 cap, and 10,000,000 gas gets 646,400,000.
+The installed registry wallet library matches the upstream-built artifact.
+Build log: `/tmp/mix-upstream-wallet-registry-build.log`.
+Wallet tests: `/tmp/mix-upstream-wallet-tests.log`.
+Fee-cap regression: `/tmp/mix-upstream-wallet-fee-regression.log`.
+
+A first fresh-chain fixture run encountered the local chain's initial zero
+`CLOCK_50`: registrations created before its first update appeared expired
+when it advanced to real time. The fixture documentation now states this
+precondition. This is separate from wallet fee admission.
+
+The rerun passed with seven fresh funded wallets on the initialized local
+chain: every scoped membership became active, all Mix participants received
+protected metadata, the exact payload arrived through Mix, and stopping the
+intermediates blocked Required traffic while ordinary Relay delivery continued.
+Log: `/tmp/mix-upstream-wallet-network-rerun.log`.
+Run: `/tmp/mix-rln-e2e/runs/20260921-094653-shared-delivery-mix-local`.
+
 ## Remote validation and deployment limits
 
 Native Delivery, shared RLN, core Mix, and Delivery module CI passed, as did
@@ -156,8 +184,9 @@ match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 - [Mix plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22)
 - [Wallet gas limit and fee cap #884](https://github.com/logos-blockchain/logos-execution-zone/pull/884) — merged upstream,
   including fee-cap fix `f0778a4316daa4065ff18a77f4f98706149c240e`.
-  This supersedes the fork PR; the integration recorded above still uses wallet
-  commit `6752be252e441717ab934013cce101379ea4966b`.
+  The root flake now pins this upstream wallet through the registry module's
+  nested input. Earlier integration runs used fork commit
+  `6752be252e441717ab934013cce101379ea4966b`; that fork PR is closed.
 - [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
 - [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)

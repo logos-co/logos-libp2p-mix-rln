@@ -356,11 +356,15 @@ recorded in the work summary.
 
 ### Registry wallet compatibility
 
-Use the pinned registry wallet dependency. Earlier builds used a fee cap based
-on the default 2,000,000 gas limit even when registration configured 10,000,000.
-Fresh provisioning then failed as base fees rose, despite funded wallets. The
-current dependency calculates the cap from the configured limit; its 50 wallet
-unit tests pass, and the complete fresh-host fixture passes with this fix.
+The root flake overrides the registry module's wallet dependency to upstream
+LEZ commit `f0778a4316daa4065ff18a77f4f98706149c240e`, included in merged
+[LEZ #884](https://github.com/logos-blockchain/logos-execution-zone/pull/884).
+Earlier builds used a fee cap based on the default 2,000,000 gas limit even when
+registration configured 10,000,000, so fresh provisioning failed as base fees
+rose despite funded wallets. The upstream wallet scales the cap with the
+configured limit; all 49 upstream wallet unit tests pass. The seven-host fixture
+also passes with the upstream wallet; see the migration results in
+[WORK_SUMMARY.md](WORK_SUMMARY.md).
 
 A submitted membership is not necessarily active. If the registry rejects its
 transaction, a retryable failure can leave it pending until the backend's
