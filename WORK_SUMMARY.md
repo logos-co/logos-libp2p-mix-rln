@@ -154,7 +154,9 @@ match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 
 - [Core Mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58)
 - [Mix plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22)
-- [Wallet fee cap #1](https://github.com/adklempner/logos-execution-zone/pull/1),
+- [Wallet gas limit and fee cap #884](https://github.com/logos-blockchain/logos-execution-zone/pull/884) — merged upstream,
+  including fee-cap fix `f0778a4316daa4065ff18a77f4f98706149c240e`.
+  This supersedes the fork PR; the integration recorded above still uses wallet
   commit `6752be252e441717ab934013cce101379ea4966b`.
 - [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
