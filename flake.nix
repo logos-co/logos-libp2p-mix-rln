@@ -9,7 +9,7 @@
       "github:logos-blockchain/logos-execution-zone/f0778a4316daa4065ff18a77f4f98706149c240e";
 
     # Pin the standalone facade from upstream main.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/5767c6c2a121ad5ea7052822a5aaa8260b92f2e3";
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/7556d8fa0fd1ec53da516acc105ce64884f1d1c0";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
