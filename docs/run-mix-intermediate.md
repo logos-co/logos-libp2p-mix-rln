@@ -359,7 +359,6 @@ peerId
 multiaddrs
 mixPubKeyHex
 libp2pPubKeyHex
-exitEnabled
 ```
 
 Add each record:
@@ -372,10 +371,9 @@ Inspect the resulting pool with `listMixPeers()`. The local node's record is
 available from `getLocalMixPeerRecord()` and should be distributed to other
 Mix participants.
 
-An intermediate record must advertise `exitEnabled=false`. The overall peer
-pool must allow complete routes ending at a record with `exitEnabled=true`.
-`addMixPeer` does not discover peers or prove their registry membership; those
-remain host/operator responsibilities.
+Peer records have no exit capability: Logos senders explicitly name the
+destination that terminates the Mix route. `addMixPeer` does not discover peers
+or prove their registry membership; those remain host/operator responsibilities.
 
 ## 9. Verify readiness
 
