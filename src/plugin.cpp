@@ -469,27 +469,21 @@ StdLogosResult Libp2pMixRlnModuleImpl::hasRlnMembership() {
 // Mix send ---------------------------------------------------------------
 
 // submitMixSend is a file-scope static so it can call cbMixSend directly.
-// `destMultiaddr` may be empty when `isExitDest` is true (exit-is-dest mode);
-// non-empty otherwise (forwardToAddr mode targeting an external destination).
 static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
                                     const std::string& destPeerId,
-                                    const std::string& destMultiaddr,
                                     const std::string& proto,
                                     const std::vector<uint8_t>& payload,
                                     bool expectReply,
-                                    bool isExitDest,
                                     LibMixRlnSendMixMessageReplyFn cb) {
     if (!ctx) return {false, {}, "sendMixMessage: node not created"};
     MixSendRequest req{};
     req.destPeerId    = borrowStr(destPeerId);
-    req.destMultiaddr = borrowStr(destMultiaddr);
     req.proto         = borrowStr(proto);
     req.payload.data  = const_cast<uint8_t*>(payload.data());
     req.payload.len   = payload.size();
     req.expectReply   = expectReply;
     req.numSurbs      = expectReply ? 1 : 0;
     req.timeoutMs     = kDefaultOpTimeoutMs;
-    req.isExitDest    = isExitDest;
 
     auto* p = new std::promise<SyncResult>();
     auto f = p->get_future();
@@ -504,38 +498,19 @@ static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessage(const std::string& destPeerId,
-                                                      const std::string& destMultiaddr,
                                                       const std::string& proto,
                                                       const std::vector<uint8_t>& payload) {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, destMultiaddr, proto, payload,
-                         /*expectReply=*/false, /*isExitDest=*/false, cbMixSend);
-}
-
-StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageToExit(const std::string& destPeerId,
-                                                            const std::string& proto,
-                                                            const std::vector<uint8_t>& payload) {
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, /*destMultiaddr=*/{}, proto, payload,
-                         /*expectReply=*/false, /*isExitDest=*/true, cbMixSend);
+    return submitMixSend(m_ctx, destPeerId, proto, payload,
+                         /*expectReply=*/false, cbMixSend);
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageWithSurb(const std::string& destPeerId,
-                                                              const std::string& destMultiaddr,
                                                               const std::string& proto,
                                                               const std::vector<uint8_t>& payload) {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, destMultiaddr, proto, payload,
-                         /*expectReply=*/true, /*isExitDest=*/false, cbMixSend);
-}
-
-StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageToExitWithSurb(
-    const std::string& destPeerId,
-    const std::string& proto,
-    const std::vector<uint8_t>& payload) {
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, /*destMultiaddr=*/{}, proto, payload,
-                         /*expectReply=*/true, /*isExitDest=*/true, cbMixSend);
+    return submitMixSend(m_ctx, destPeerId, proto, payload,
+                         /*expectReply=*/true, cbMixSend);
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixSurbReply(const std::vector<uint8_t>& surb,
@@ -605,7 +580,6 @@ void cbGetLocalMixPeerRecord(int ec, const MixPeerRecord* r,
             {"peerId",          std::string(r->peerId.data ? r->peerId.data : "",
                                             r->peerId.data ? r->peerId.len : 0)},
             {"multiaddrs",      std::move(addrs)},
-            {"exitEnabled",     r->exitEnabled},
             {"mixPubKeyHex",    hexEncodeBytes(r->mixPubKey.data, r->mixPubKey.len)},
             {"libp2pPubKeyHex", std::string(r->libp2pPubKeyHex.data ? r->libp2pPubKeyHex.data : "",
                                             r->libp2pPubKeyHex.data ? r->libp2pPubKeyHex.len : 0)},
@@ -673,12 +647,7 @@ StdLogosResult Libp2pMixRlnModuleImpl::addMixPeer(const std::string& recordJson)
         addrsFfi.push_back(s);
     }
 
-    auto exitIt = j.find("exitEnabled");
-    if (exitIt != j.end() && !exitIt->is_boolean())
-        return {false, {}, "addMixPeer: exitEnabled must be a boolean"};
-
     MixPeerRecord rec{};
-    rec.exitEnabled = j.value("exitEnabled", false);
     rec.peerId          = NimFfiStr{const_cast<char*>(peerId.c_str()), peerId.size()};
     rec.multiaddrs.data = addrsFfi.data();
     rec.multiaddrs.len  = addrsFfi.size();

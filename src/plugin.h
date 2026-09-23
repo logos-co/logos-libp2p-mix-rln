@@ -87,45 +87,32 @@ public:
     StdLogosResult drainCoordBacklog();
 
     // Application sends, including explicit SURB replies, require mix.allowSend.
+    // Logos supports exit == destination only; the destination must run a
+    // receiver mounted for `proto`.
     StdLogosResult sendMixMessage(const std::string& destPeerId,
-                                  const std::string& destMultiaddr,
                                   const std::string& proto,
                                   const std::vector<uint8_t>& payload);
 
-    // Intra-mixnet send: the exit is the destination. Uses
-    // `MixDestination.exitNode(peerId)` on the Nim side — no destination
-    // multiaddr needed because the exit runs a mounted receiver protocol
-    // and handles the payload itself. Pairs with `mountReceiver`.
-    StdLogosResult sendMixMessageToExit(const std::string& destPeerId,
-                                        const std::string& proto,
-                                        const std::vector<uint8_t>& payload);
-
     StdLogosResult sendMixMessageWithSurb(const std::string& destPeerId,
-                                          const std::string& destMultiaddr,
                                           const std::string& proto,
                                           const std::vector<uint8_t>& payload);
-
-    StdLogosResult sendMixMessageToExitWithSurb(const std::string& destPeerId,
-                                                const std::string& proto,
-                                                const std::vector<uint8_t>& payload);
 
     StdLogosResult sendMixSurbReply(const std::vector<uint8_t>& surb,
                                     const std::vector<uint8_t>& payload);
 
-    // Peer record includes peerId, multiaddrs, mixPubKeyHex, libp2pPubKeyHex,
-    // and exitEnabled. Only advertised exits are eligible for application delivery.
+    // Peer record includes peerId, multiaddrs, mixPubKeyHex, and libp2pPubKeyHex.
     StdLogosResult getLocalMixPeerRecord();
 
     // Installs a peer record into the local nodePool. Takes the whole record
     // as a JSON string of the shape `getLocalMixPeerRecord` returns
-    // (`{peerId, multiaddrs, mixPubKeyHex, libp2pPubKeyHex, exitEnabled}`) — passing it as
+    // (`{peerId, multiaddrs, mixPubKeyHex, libp2pPubKeyHex}`) — passing it as
     // a single string keeps the LIDL args scalar-only, which is what the
     // `logoscore call` CLI knows how to marshal.
     StdLogosResult addMixPeer(const std::string& recordJson);
 
     // Requires mix.allowExit. Mounts a protocol on `codec`; length-prefixed
     // bytes (up to `maxSize`) are queued into an inbox, drainable via
-    // `drainReceivedMessages`. Pairs with `sendMixMessage(isExitDest=true)`.
+    // `drainReceivedMessages`. Pairs with `sendMixMessage`.
     StdLogosResult mountReceiver(const std::string& codec, int64_t maxSize);
 
     // Returns and clears the accumulated `IncomingMixMessage` payloads for

@@ -192,8 +192,6 @@ def main():
         print(f"{node}: shared-RLN intermediate started", flush=True)
     records = {node: call(node, MIX if node in INTERMEDIATES else DELIVERY,
                           "getLocalMixPeerRecord") for node in MIX_NODES}
-    for node in INTERMEDIATES:
-        assert not records[node]["exitEnabled"], records[node]
     for node in MIX_NODES:
         module = MIX if node in INTERMEDIATES else DELIVERY
         for peer in MIX_NODES:

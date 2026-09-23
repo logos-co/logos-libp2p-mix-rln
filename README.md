@@ -284,8 +284,8 @@ coordination nodes should use ordinary Delivery sending for metadata.
 Both standalone Mix and the updated Delivery module expose
 `getLocalMixPeerRecord()` and `addMixPeer(recordJson)`. Exchange the complete
 record: peer ID, multiaddresses, Mix public key, libp2p public key, and
-`exitEnabled`. Intermediate records advertise `exitEnabled=false`; application
-routes must end at an eligible exit. All participants need usable peer pools.
+no separate exit capability. Logos application sends name their destination as
+the final Mix hop. All participants need usable peer pools.
 
 Native Delivery waits for Identify before checking a registered Mix peer. A
 standalone Mix-only peer does not need to implement Waku metadata; a peer that
@@ -303,7 +303,7 @@ Discovery or validate a peer's registry membership merely by adding its record.
 | Introspection | `getNodeInfo`, `getLocalMixPeerRecord`, `addMixPeer`, `listMixPeers` |
 | Membership | `registerRlnMembership`, `hasRlnMembership` |
 | Coordination | `deliverCoordFrame`, `drainCoordBacklog`; `RlnPublishRequested` event |
-| Optional sender | `sendMixMessage`, `sendMixMessageToExit`, corresponding `WithSurb` methods, `sendMixSurbReply` |
+| Optional sender | `sendMixMessage`, `sendMixMessageWithSurb`, `sendMixSurbReply` |
 | Optional exit | `mountReceiver`, `drainReceivedMessages`; `IncomingMixMessage` event |
 | Cover | `getCoverTrafficRate`, `setCoverTrafficRate` |
 | Diagnostics | `collectMetrics` currently returns an empty map. |
