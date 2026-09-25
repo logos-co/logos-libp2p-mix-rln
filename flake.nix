@@ -8,8 +8,8 @@
     liblogos_rln_module.inputs.liblogos_lez_rln_module.inputs.logos-execution-zone.url =
       "github:logos-blockchain/logos-execution-zone/f0778a4316daa4065ff18a77f4f98706149c240e";
 
-    # Pin the standalone facade from upstream main.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/7556d8fa0fd1ec53da516acc105ce64884f1d1c0";
+    # Pin the standalone facade with default application sending and exit delivery.
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/db0d8a2dcf5aaeef8d8274db4ccd59104449e098";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:

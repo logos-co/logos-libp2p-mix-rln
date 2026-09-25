@@ -21,8 +21,6 @@ inline constexpr const char* kCoverStrategy = "constant_rate";
 enum class TransportKind { Tcp, Quic };
 
 struct MixOptions {
-    bool allowSend = false;
-    bool allowExit = false;
     // Hex-encoded X25519 private key. Empty → generate on start.
     std::vector<uint8_t> mixPrivKey = {};
     // Cover-traffic rate ratio (LIP LOGOS-MIXNET: 0.7).
@@ -109,8 +107,6 @@ inline TransportKind parseTransport(const nlohmann::json& j, TransportKind fallb
 }
 
 inline void applyMix(const nlohmann::json& j, MixOptions& m) {
-    m.allowSend = j.value("allowSend", m.allowSend);
-    m.allowExit = j.value("allowExit", m.allowExit);
     if (auto it = j.find("mixPrivKey"); it != j.end()) {
         if (!it->is_string()) throw std::invalid_argument("mix.mixPrivKey must be a string");
         m.mixPrivKey = decodeHex(it->get<std::string>());

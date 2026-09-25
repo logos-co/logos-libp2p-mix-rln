@@ -118,8 +118,6 @@ struct FfiConfigBundle {
         cfg.maxConnsPerPeer      = opts.maxConnsPerPeer;
 
         cfg.mix.mixPrivKeyHex     = borrowStr(mixPrivKeyHex);
-        cfg.mix.allowSend         = opts.mix.allowSend;
-        cfg.mix.allowExit         = opts.mix.allowExit;
         cfg.mix.coverRateFraction = opts.mix.coverRateFraction;
 
         cfg.rln.registryId = borrowStr(opts.rln.registryId);

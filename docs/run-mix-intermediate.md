@@ -260,7 +260,7 @@ services independently.
 
 ## 6. Configure and start the Mix intermediate
 
-Use an explicit intermediate-only configuration:
+Use the following node configuration:
 
 ```json
 {
@@ -269,8 +269,6 @@ Use an explicit intermediate-only configuration:
   "maxConnections": 50,
   "maxConnsPerPeer": 2,
   "mix": {
-    "allowSend": false,
-    "allowExit": false,
     "cover": {
       "rateFraction": 0.7
     }
@@ -293,9 +291,9 @@ libp2p_mix_rln_module.createNode(configJson)
 libp2p_mix_rln_module.start()
 ```
 
-Keep both role flags false. `allowSend` enables application-originated sends;
-`allowExit` enables final application delivery. Neither is required by an
-intermediate. Intermediate-only mode still generates cover traffic.
+Every node can send and act as an exit by default. Applications use the send
+APIs and mount receivers for local protocol delivery. Forwarding and cover
+traffic do not require an application receiver.
 
 The example `MIX_RLN_ID` in `config.example.json` is the zero-padded encoding
 of `mix-rln-spam-protection/v1`. Treat it and the example metadata topic as

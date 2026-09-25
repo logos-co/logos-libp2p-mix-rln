@@ -86,7 +86,6 @@ public:
     StdLogosResult deliverCoordFrame(const std::string& contentTopic, const std::string& payloadHex);
     StdLogosResult drainCoordBacklog();
 
-    // Application sends, including explicit SURB replies, require mix.allowSend.
     // Logos supports exit == destination only; the destination must run a
     // receiver mounted for `proto`.
     StdLogosResult sendMixMessage(const std::string& destPeerId,
@@ -110,7 +109,7 @@ public:
     // `logoscore call` CLI knows how to marshal.
     StdLogosResult addMixPeer(const std::string& recordJson);
 
-    // Requires mix.allowExit. Mounts a protocol on `codec`; length-prefixed
+    // Mounts a protocol on `codec`; length-prefixed
     // bytes (up to `maxSize`) are queued into an inbox, drainable via
     // `drainReceivedMessages`. Pairs with `sendMixMessage`.
     StdLogosResult mountReceiver(const std::string& codec, int64_t maxSize);
