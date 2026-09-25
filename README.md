@@ -2,8 +2,8 @@
 
 A Logos Core module for standalone Mix intermediates. It owns a libp2p switch,
 forwards Sphinx packets, and checks per-hop RLN proofs through the shared
-`liblogos_rln_module`. Application sending and exit delivery are disabled by
-default and require explicit opt-in.
+`liblogos_rln_module`. Nodes can send and act as exits by default; applications
+use the send APIs and mount receivers for the protocols they serve.
 
 The complete shared-RLN / native Delivery fixture has passed with fresh local
 wallets and memberships, including the no-direct-fallback check. See
@@ -55,18 +55,10 @@ is not sufficient evidence of conformance to that profile.
 
 ### Node roles
 
-`mix.allowSend` and `mix.allowExit` are independent, create-time settings:
-
-| allowSend | allowExit | Standalone application role |
-| --- | --- | --- |
-| false | false | Intermediate only; the default. |
-| true | false | Sender and intermediate. |
-| false | true | Exit and intermediate. |
-| true | true | Sender, exit, and intermediate. |
-
-Intermediate-only nodes still generate cover traffic and participate in
-routing and proof coordination. These flags gate application endpoint APIs;
-they do not turn off the protocol work needed by intermediates.
+Every node can forward traffic, send application messages, and act as an exit.
+Applications send through the APIs and mount receivers for local protocol
+delivery. Nodes generate cover traffic and participate in routing and proof
+coordination without an application receiver.
 
 A Delivery **light client** uses Lightpush and Filter services without joining
 the Relay mesh. A Mix **edge** is an application sender or exit. These are
@@ -212,7 +204,7 @@ cancels pending adapter requests and ignores late replies.
 
 Cover rate must be greater than zero and no greater than one. The default is
 0.7; local tests use 0.01 to reduce cost. A low test rate is not a privacy or
-capacity guarantee. Intermediate-only mode still sends cover packets.
+capacity guarantee. Nodes without application receivers still send cover packets.
 
 ## Startup and configuration
 
@@ -243,7 +235,7 @@ Replace its registry placeholder with the real registry ID:
 {
   "addrs": ["/ip4/0.0.0.0/tcp/9100"],
   "transport": "tcp",
-  "mix": {"allowSend": false, "allowExit": false, "cover": {"rateFraction": 0.7}},
+  "mix": {"cover": {"rateFraction": 0.7}},
   "rln": {
     "registryId": "<registry-id>",
     "rlnIdentifierHex": "6d69782d726c6e2d7370616d2d70726f74656374696f6e2f7631000000000000",
@@ -319,9 +311,9 @@ serialized with a mutex. Blocking the host event loop would deadlock startup
 and proof requests.
 
 Standalone endpoint APIs remain available for compatibility and protocol tests.
-They require the corresponding role opt-in. Mounting an application receiver
-is unnecessary for an intermediate. Production Delivery application sending
-uses native Delivery Mix rather than a host manually wrapping `sendMixMessage`.
+Mounting an application receiver is unnecessary for forwarding traffic.
+Production Delivery application sending uses native Delivery Mix rather than
+a host manually wrapping `sendMixMessage`.
 
 ## Build and validation
 

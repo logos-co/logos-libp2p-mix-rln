@@ -13,9 +13,9 @@ protected coordination, exact payload delivery, and no direct fallback.
 
 ## Accepted architecture
 
-- The standalone module owns its libp2p switch and defaults to an intermediate
-  role: `mix.allowSend=false`, `mix.allowExit=false`. Endpoint capabilities
-  remain deliberate opt-ins.
+- The standalone module owns its libp2p switch. Every node can forward, send,
+  and act as an exit by default. Applications mount receivers for the local
+  protocols they serve.
 - Applications send through Delivery's existing `send()` API with anonymity
   `Required`. Delivery's native Mix implementation creates the Sphinx route.
   Standalone intermediates forward it; a Delivery Mix exit handles Lightpush.

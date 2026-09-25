@@ -27,8 +27,6 @@
             "maxConnsPerPeer": "int — default 2, allowing simultaneous inbound/outbound dials",
 
             "mix": {
-                "allowSend": "bool — default false; opt in to application sends and explicit SURB replies",
-                "allowExit": "bool — default false; opt in to local or external application exit delivery; cover traffic is unaffected",
                 "mixPrivKey": "string — hex-encoded X25519 private key advertised for Sphinx path selection. Omit to generate on start.",
                 "cover": {
                     "rateFraction": "float — CONSTANT_RATE cover-traffic ratio. LIP LOGOS-MIXNET default: 0.7."

@@ -6,8 +6,6 @@
   "maxConnections": 50,
   "maxConnsPerPeer": 2,
   "mix": {
-    "allowSend": false,
-    "allowExit": false,
     "cover": {
       "rateFraction": 0.7
     }
