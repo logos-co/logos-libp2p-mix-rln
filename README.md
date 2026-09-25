@@ -202,9 +202,10 @@ Sphinx packets without consuming proof quota; proofs are requested when packets
 are sent. Canceled or failed sends do not reclaim spent allocations. Shutdown
 cancels pending adapter requests and ignores late replies.
 
-Cover rate must be greater than zero and no greater than one. The default is
-0.7; local tests use 0.01 to reduce cost. A low test rate is not a privacy or
-capacity guarantee. Nodes without application receivers still send cover packets.
+Cover rate is configured at initialization and must be greater than zero and
+no greater than one. The default is 0.7; local tests use 0.01 to reduce cost.
+A low test rate is not a privacy or capacity guarantee. Nodes without application
+receivers still send cover packets.
 
 ## Startup and configuration
 
@@ -297,7 +298,7 @@ Discovery or validate a peer's registry membership merely by adding its record.
 | Coordination | `deliverCoordFrame`, `drainCoordBacklog`; `RlnPublishRequested` event |
 | Optional sender | `sendMixMessage`, `sendMixMessageWithSurb`, `sendMixSurbReply` |
 | Optional exit | `mountReceiver`, `drainReceivedMessages`; `IncomingMixMessage` event |
-| Cover | `getCoverTrafficRate`, `setCoverTrafficRate` |
+| Cover | `getCoverTrafficRate` |
 | Diagnostics | `collectMetrics` currently returns an empty map. |
 
 `getNodeInfo` accepts `Version`, `PeerId`, `Multiaddrs`, `MixPublicKey`, and

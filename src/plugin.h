@@ -124,7 +124,6 @@ public:
 
     // Cover traffic --------------------------------------------------------
     StdLogosResult getCoverTrafficRate();
-    StdLogosResult setCoverTrafficRate(double rate);
 
     // Diagnostics ----------------------------------------------------------
     LogosMap collectMetrics();
