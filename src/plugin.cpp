@@ -764,22 +764,6 @@ StdLogosResult Libp2pMixRlnModuleImpl::getCoverTrafficRate() {
     return {true, r.jsonValue, ""};
 }
 
-StdLogosResult Libp2pMixRlnModuleImpl::setCoverTrafficRate(double rate) {
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    if (!m_ctx) return {false, {}, "setCoverTrafficRate: node not created"};
-    SetCoverRateRequest req{rate};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_set_cover_traffic_rate(m_ctx, &req, cbBool, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "setCoverTrafficRate");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "setCoverTrafficRate: " + r.message};
-    return {true, json{{"ok", r.boolValue}}, ""};
-}
-
 LogosMap Libp2pMixRlnModuleImpl::collectMetrics() {
     // Nim side doesn't emit metrics through the FFI yet. When it does, this
     // will call a `libp2p_mix_rln_ctx_collect_metrics` and translate the
