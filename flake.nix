@@ -3,7 +3,7 @@
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder/0.3.0";
-    liblogos_rln_module.url = "git+https://github.com/richard-ramos/logos-rln-modules?ref=integration/mix-wire-binding-wallet-fix&rev=bc44cd47c62b29c783c100690a790a6986863825&dir=logos-rln-module";
+    liblogos_rln_module.url = "git+https://github.com/richard-ramos/logos-rln-modules?ref=feat/mix-wire-binding&rev=63bb541d18c53e3c6e261421ee9eb8c2fd8445ca&dir=logos-rln-module";
     # Upstream wallet includes configurable gas limits and the matching fee cap.
     liblogos_rln_module.inputs.liblogos_lez_rln_module.inputs.logos-execution-zone.url =
       "github:logos-blockchain/logos-execution-zone/f0778a4316daa4065ff18a77f4f98706149c240e";
