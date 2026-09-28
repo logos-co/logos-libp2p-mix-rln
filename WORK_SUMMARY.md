@@ -142,13 +142,12 @@ contains `6c9a2f8684a1c81f2e84abe2dc57e6b4e1fb629d` (CI cleanup and the correcte
 This branch contains the Logos module bridge, current architecture docs, and
 new local-chain network fixture. The complete fresh-host positive and negative fixture passed.
 
-The shared backend integration pin is
-`bc44cd47c62b29c783c100690a790a6986863825`: the fixture-tested
-`4f1f610a05d6108a88b6b9a4f365f6830365ae21` plus the typed
-`VerificationResult.external_nullifier` contract fix from shared RLN #27.
-The complete fixture has not been rerun for that schema-only follow-up.
-The integration branch is based on RLN modules main
-`6e3c6c47d4d1ae7efa635a61a171891c23967fd8` (0.8.2).
+The shared backend pin is
+`63bb541d18c53e3c6e261421ee9eb8c2fd8445ca` from shared RLN #27.
+The explicit `logos-execution-zone` override above retains the corrected
+configured-gas fee cap used by the fixture-tested `4f1f610` integration
+revision. The complete fixture has not been rerun for this schema-only
+backend follow-up.
 This replaces the older `feat/lip-alignment` baseline so local-chain layouts
 match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 
