@@ -168,8 +168,9 @@ Consumers pin functional revision `29eaaf1`; the later commits only refresh
 the core repository's Nix dependency snapshot, which builds successfully and
 passes the remote Nix drift/build check.
 Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
-#4282 contains `9cc5babdd47d07bef396dafb54a367725ecb46e7`; Delivery module #125
-contains `6c9a2f8684a1c81f2e84abe2dc57e6b4e1fb629d` (CI cleanup and the corrected wallet dependency). The FFI shared-only change is published as `67765f6`; repository rename
+#4282 contains `d8cd81d109bb5bbf220e6c7aac97f423ae2d14c3`; Delivery module #125
+pins it at `b8b3da1cb073cb81b13cabbb16d22d2cc728e742`. Their public peer records omit the obsolete
+`exitEnabled` capability. The FFI shared-only change is published as `67765f6`; repository rename
 `e13dbdc` was the renamed-repository pin. The current upstream-main pin is
 `97fc94eb5ecd2ed884eda9b5b4bb55430f8248c0`, with an identical FFI source tree.
 This branch contains the Logos module bridge, current architecture docs, and
@@ -178,9 +179,12 @@ new local-chain network fixture. The complete fresh-host positive and negative f
 The shared backend pin is
 `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca` from shared RLN #27.
 The explicit `logos-execution-zone` override above retains the corrected
-configured-gas fee cap used by the fixture-tested `4f1f610` integration
-revision. The complete fixture has not been rerun for this schema-only
-backend follow-up.
+configured-gas fee cap. The complete fresh-host fixture passed with this
+backend and wallet pin, Native Delivery `f5fbe4a`, and Delivery module
+`33e149d`; run
+`/tmp/mix-rln-e2e/runs/20260928-205756-shared-delivery-mix-local`. Per the
+follow-up decision, it was not rerun for the subsequent peer-record schema
+cleanup (`d8cd81d1` / `b8b3da1`).
 This replaces the older `feat/lip-alignment` baseline so local-chain layouts
 match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 
