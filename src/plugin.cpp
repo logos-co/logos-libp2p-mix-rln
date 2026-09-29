@@ -184,15 +184,6 @@ static void cbMixSend(int ec, const MixSendResponse* reply, const char* em, void
     finish(p, std::move(r));
 }
 
-static void cbCoverRate(int ec, const CoverRateResponse* reply, const char* em, void* ud) {
-    auto* p = static_cast<std::promise<SyncResult>*>(ud);
-    SyncResult r = baseReply(ec, em);
-    if (r.ok && reply) {
-        r.jsonValue = {{"rate", reply->rate}};
-    }
-    finish(p, std::move(r));
-}
-
 static void cbMixPeers(int ec, const MixPeersResponse* reply, const char* em, void* ud) {
     auto* p = static_cast<std::promise<SyncResult>*>(ud);
     SyncResult r = baseReply(ec, em);
@@ -747,21 +738,6 @@ StdLogosResult Libp2pMixRlnModuleImpl::drainReceivedMessages() {
         });
     }
     return {true, arr, ""};
-}
-
-StdLogosResult Libp2pMixRlnModuleImpl::getCoverTrafficRate() {
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    if (!m_ctx) return {false, {}, "getCoverTrafficRate: node not created"};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_get_cover_traffic_rate(m_ctx, cbCoverRate, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "getCoverTrafficRate");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "getCoverTrafficRate: " + r.message};
-    return {true, r.jsonValue, ""};
 }
 
 LogosMap Libp2pMixRlnModuleImpl::collectMetrics() {
