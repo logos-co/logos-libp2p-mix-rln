@@ -177,10 +177,10 @@ new local-chain network fixture. The complete fresh-host positive and negative f
 
 The shared backend pin is
 `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca` from shared RLN #27.
-The explicit `logos-execution-zone` v0.3.0-rc1 override above contains the
-corrected configured-gas fee cap used by the fixture-tested `4f1f610`
-integration revision. The complete fixture has not been rerun for this
-backend dependency follow-up.
+The explicit `logos-execution-zone` override above retains the corrected
+configured-gas fee cap used by the fixture-tested `4f1f610` integration
+revision. The complete fixture has not been rerun for this schema-only
+backend follow-up.
 This replaces the older `feat/lip-alignment` baseline so local-chain layouts
 match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 
