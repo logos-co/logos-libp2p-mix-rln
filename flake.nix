@@ -6,7 +6,7 @@
     liblogos_rln_module.url = "git+https://github.com/richard-ramos/logos-rln-modules?ref=feat/mix-wire-binding&rev=63bb541d18c53e3c6e261421ee9eb8c2fd8445ca&dir=logos-rln-module";
     # Upstream wallet includes configurable gas limits and the matching fee cap.
     liblogos_rln_module.inputs.liblogos_lez_rln_module.inputs.logos-execution-zone.url =
-      "github:logos-blockchain/logos-execution-zone/v0.3.0-rc1";
+      "github:logos-blockchain/logos-execution-zone/f0778a4316daa4065ff18a77f4f98706149c240e";
 
     # Pin the standalone facade with default application sending and exit delivery.
     libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/d273adf80742ac904b0a2945507ed73bc7c74913";
