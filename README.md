@@ -298,7 +298,6 @@ Discovery or validate a peer's registry membership merely by adding its record.
 | Coordination | `deliverCoordFrame`, `drainCoordBacklog`; `RlnPublishRequested` event |
 | Optional sender | `sendMixMessage`, `sendMixMessageWithSurb`, `sendMixSurbReply` |
 | Optional exit | `mountReceiver`, `drainReceivedMessages`; `IncomingMixMessage` event |
-| Cover | `getCoverTrafficRate` |
 | Diagnostics | `collectMetrics` currently returns an empty map. |
 
 `getNodeInfo` accepts `Version`, `PeerId`, `Multiaddrs`, `MixPublicKey`, and

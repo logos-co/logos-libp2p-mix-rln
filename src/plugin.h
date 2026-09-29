@@ -122,9 +122,6 @@ public:
     // Mix-node inventory ---------------------------------------------------
     StdLogosResult listMixPeers();
 
-    // Cover traffic --------------------------------------------------------
-    StdLogosResult getCoverTrafficRate();
-
     // Diagnostics ----------------------------------------------------------
     LogosMap collectMetrics();
 
