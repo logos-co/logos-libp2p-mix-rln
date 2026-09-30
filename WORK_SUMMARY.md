@@ -1,12 +1,12 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-29. The current integration chain is:
+Updated: 2026-09-30. The current integration chain is:
 
 - Core Mix #58: `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba`
 - Mix plugin #22: `ac83f368e286c033e72fbd08dc63a4a802cfac0d`
 - Shared RLN #27: `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`
-- Native Delivery #4282: `0701e3c916c71831a695c43ffd40d3c8ba5941ab`
-- Delivery module #125: `fba4da35b1d8193fc30e34a7c007e621ba16b5ad`
+- Native Delivery #4282: `5becb59bc530435ba02a2c4f4be596f3d93e86c6`
+- Delivery module #148: `ce2f68bae3b1fa0e7ee4b8ac406128c5bec026dc`
 - Standalone FFI `main`: `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`
   (merge commit for FFI #7)
 
@@ -67,16 +67,17 @@ The shared backend still owns its cryptographic dependencies.
 
 Completed locally:
 
-- The latest dependency chain built and passed the seven-host fixture. Delivery
-  keeps explicitly registered standalone Mix peers even when the generic
-  pure-libp2p budget is zero; unregistered peers remain budget-limited. The
-  focused peer-admission regression passed, Delivery module #125 rebuilt from
-  the final #4282 head, every scoped membership became active, and the exact
-  `Delivery Required` payload reached the recipient through all three
-  standalone intermediates. After stopping them, ordinary Relay delivery
-  remained usable while Required traffic did not bypass Mix.
-  Run:
+- The 2026-09-29 dependency chain passed the seven-host fixture: every scoped
+  membership became active, the exact `Delivery Required` payload reached the
+  recipient through all three standalone intermediates, and the negative
+  no-fallback check passed. That run used the previous #4282 head and the now
+  reverted Delivery module #125:
   `/tmp/mix-rln-e2e/runs/20260929-193640-shared-delivery-mix-local`.
+- Current Delivery #4282 removes the registered-peer admission exception and
+  passes its focused replacement test. Delivery module #148 supersedes #125,
+  pins the rebased Delivery head, and builds its LGX successfully. The fixture
+  now configures `maxPureLibp2pPeers` to 100 on the sender and exit. A complete
+  seven-host rerun at these revisions is pending.
 - Core Mix: **165 unit tests** and **34 component tests** passed after async
   integration and cancellation cleanup, including the cancellation regression
   assertion.
@@ -184,14 +185,14 @@ The current open PR heads are Core Mix #58
 `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba`, Mix plugin #22
 `ac83f368e286c033e72fbd08dc63a4a802cfac0d`, Shared RLN #27
 `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`, Native Delivery #4282
-`0701e3c916c71831a695c43ffd40d3c8ba5941ab`, and Delivery module #125
-`fba4da35b1d8193fc30e34a7c007e621ba16b5ad`.
+`5becb59bc530435ba02a2c4f4be596f3d93e86c6`, and Delivery module #148
+`ce2f68bae3b1fa0e7ee4b8ac406128c5bec026dc`.
 
 FFI #7 merged as `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`;
 this module pins that `main` commit rather than the PR head. It contains the
 latest Core Mix and Mix plugin pins. The shared and registry module inputs both
 pin Shared RLN #27. Native Delivery pins the same Core Mix and Mix plugin
-revisions, and Delivery module #125 pins Native Delivery #4282.
+revisions, and Delivery module #148 pins Native Delivery #4282.
 
 The compatible `logos-lez-rln` checkout remains
 `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
@@ -205,7 +206,7 @@ The compatible `logos-lez-rln` checkout remains
   `6752be252e441717ab934013cce101379ea4966b`; that fork PR is closed.
 - [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
-- [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)
+- [Delivery module #148](https://github.com/logos-co/logos-delivery-module/pull/148) — supersedes the reverted #125.
 - [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/2) — merged.
 - [Standalone FFI #7](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/7) — merged.
 - [Logos module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2) — merged before the shared-only cleanup.
