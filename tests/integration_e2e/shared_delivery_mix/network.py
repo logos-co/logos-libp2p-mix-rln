@@ -122,7 +122,7 @@ def start_delivery(node, peers, *, service=False):
     # All test hosts use loopback; keep the production per-IP limit out of this topology.
     config["ip-colocation-limit"] = 0
     if node in ("sender", "exit"):
-        config.update(mix=True, **{"mix-rln-registry-id": REGISTRY,
+        config.update(mix=True, maxPureLibp2pPeers=100, **{"mix-rln-registry-id": REGISTRY,
                                   "mix-rln-identifier-hex": MIX_SCOPE,
                                   "mix-rln-metadata-topic": META_TOPIC})
     if node == "sender":
