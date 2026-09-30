@@ -4,12 +4,14 @@
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder/0.3.0";
     liblogos_rln_module.url = "git+https://github.com/richard-ramos/logos-rln-modules?ref=feat/mix-wire-binding&rev=63bb541d18c53e3c6e261421ee9eb8c2fd8445ca&dir=logos-rln-module";
+    liblogos_rln_module.inputs.liblogos_lez_rln_module.url =
+      "git+https://github.com/richard-ramos/logos-rln-modules?ref=feat/mix-wire-binding&rev=63bb541d18c53e3c6e261421ee9eb8c2fd8445ca&dir=logos-lez-rln-module";
     # Upstream wallet includes configurable gas limits and the matching fee cap.
     liblogos_rln_module.inputs.liblogos_lez_rln_module.inputs.logos-execution-zone.url =
       "github:logos-blockchain/logos-execution-zone/f0778a4316daa4065ff18a77f4f98706149c240e";
 
     # Pin the standalone facade with default application sending and exit delivery.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/ea93ea93830d4bd07ecbafb4cfa6f766ac7e0f07";
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/3fa97a884320a63a1c4a381da7cd625b7ec02cb4";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
