@@ -24,7 +24,7 @@ Use this dependency set for the next complete fixture run:
 | [mix-rln-spam-protection-plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) | `ac83f368e286c033e72fbd08dc63a4a802cfac0d` |
 | [logos-rln-modules #27](https://github.com/logos-co/logos-rln-modules/pull/27) | `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca` |
 | [logos-delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282) | `5becb59bc530435ba02a2c4f4be596f3d93e86c6` |
-| [logos-delivery-module #148](https://github.com/logos-co/logos-delivery-module/pull/148) | `ce2f68bae3b1fa0e7ee4b8ac406128c5bec026dc` |
+| [logos-delivery-module #148](https://github.com/logos-co/logos-delivery-module/pull/148) | `ca1fe40c665b412c5d477020f3c38c33854d5054` |
 | nim-libp2p-mix-ffi `main` (merged #7) | `3fa97a884320a63a1c4a381da7cd625b7ec02cb4` |
 | logos-rln-e2e | `747ad6fd6704645fbb8c70501432c6d236654a78` |
 | logos-lez-rln | `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc` |
@@ -111,7 +111,7 @@ git -C "$LEZ_RLN_CHECKOUT" checkout --detach 7ea94fc8c42c9a50a49bb291eea17962f88
 
 nix build .#lgx --no-write-lock-file --out-link result-mix
 
-DELIVERY_MODULE_REV=ce2f68bae3b1fa0e7ee4b8ac406128c5bec026dc
+DELIVERY_MODULE_REV=ca1fe40c665b412c5d477020f3c38c33854d5054
 DELIVERY_FLAKE="github:richard-ramos/logos-delivery-module/$DELIVERY_MODULE_REV"
 nix build "${DELIVERY_FLAKE}#lgx" --no-write-lock-file --out-link result-delivery
 nix build "${DELIVERY_FLAKE}#liblogos_rln_module-lgx" --no-write-lock-file --out-link result-rln

@@ -6,7 +6,7 @@ Updated: 2026-09-30. The current integration chain is:
 - Mix plugin #22: `ac83f368e286c033e72fbd08dc63a4a802cfac0d`
 - Shared RLN #27: `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`
 - Native Delivery #4282: `5becb59bc530435ba02a2c4f4be596f3d93e86c6`
-- Delivery module #148: `ce2f68bae3b1fa0e7ee4b8ac406128c5bec026dc`
+- Delivery module #148: `ca1fe40c665b412c5d477020f3c38c33854d5054`
 - Standalone FFI `main`: `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`
   (merge commit for FFI #7)
 
@@ -186,7 +186,7 @@ The current open PR heads are Core Mix #58
 `ac83f368e286c033e72fbd08dc63a4a802cfac0d`, Shared RLN #27
 `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`, Native Delivery #4282
 `5becb59bc530435ba02a2c4f4be596f3d93e86c6`, and Delivery module #148
-`ce2f68bae3b1fa0e7ee4b8ac406128c5bec026dc`.
+`ca1fe40c665b412c5d477020f3c38c33854d5054`.
 
 FFI #7 merged as `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`;
 this module pins that `main` commit rather than the PR head. It contains the
