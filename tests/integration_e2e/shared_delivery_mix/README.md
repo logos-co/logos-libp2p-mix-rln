@@ -14,31 +14,108 @@ Delivery switch running Relay for metadata coordination. These nodes join the
 Relay mesh directly; they do not enable Lightpush or Filter services. The sender
 and recipient remain light clients, supported by the exit and Relay service.
 
+## Known-good revisions
+
+The complete fixture passed with this dependency set:
+
+| Component | Revision |
+| --- | --- |
+| [nim-libp2p-mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58) | `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba` |
+| [mix-rln-spam-protection-plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) | `ac83f368e286c033e72fbd08dc63a4a802cfac0d` |
+| [logos-rln-modules #27](https://github.com/logos-co/logos-rln-modules/pull/27) | `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca` |
+| [logos-delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282) | `0701e3c916c71831a695c43ffd40d3c8ba5941ab` |
+| [logos-delivery-module #125](https://github.com/logos-co/logos-delivery-module/pull/125) | `fba4da35b1d8193fc30e34a7c007e621ba16b5ad` |
+| nim-libp2p-mix-ffi `main` (merged #7) | `3fa97a884320a63a1c4a381da7cd625b7ec02cb4` |
+| logos-rln-e2e | `747ad6fd6704645fbb8c70501432c6d236654a78` |
+| logos-lez-rln | `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc` |
+
+The Mix module flake pins the first three Mix/RLN revisions and merged FFI
+`main`. Delivery module #125 pins the listed Delivery #4282 revision and
+exports the Delivery, shared RLN, and LEZ registry bundles used below.
+
+## Prerequisites
+
+The local target needs Nix with flakes enabled, Rust/Cargo, Docker, and the
+standard `git`, `jq`, `curl`, `python3`, `rsync`, and `tar` tools.
+Install the RISC Zero Cargo subcommand before building the LEZ guest programs;
+this is the same setup used by `logos-lez-rln` CI:
+
 ```sh
-export RLN_E2E_ROOT=/path/to/logos-rln-e2e
-export LOGOSCORE=/path/to/logoscore
-export MIX_LGX=/path/to/mix.lgx
-export DELIVERY_LGX=/path/to/delivery.lgx
-export RLN_LGX=/path/to/rln.lgx
-export LEZ_RLN_LGX=/path/to/lez-rln.lgx
-export LEZ_RLN_CHECKOUT=/path/to/compatible/logos-lez-rln
-ln -s "$PWD/tests/integration_e2e/shared_delivery_mix" \
+curl -L https://risczero.com/install | bash
+export PATH="$HOME/.risc0/bin:$PATH"
+rzup install
+cargo risczero --version
+```
+
+## Build and run
+
+For a new workspace, clone this repository first. Skip this block if you are
+already reading the file from an existing checkout.
+
+```sh
+mkdir -p logos-mix-rln-workspace
+cd logos-mix-rln-workspace
+git clone https://github.com/logos-co/logos-libp2p-mix-rln.git
+cd logos-libp2p-mix-rln
+```
+
+Continue from the `logos-libp2p-mix-rln` root. The commands below clone the
+test harness and local-chain tooling into a sibling dependency directory. If
+those checkouts already exist, skip those two `git clone` commands. Nix
+fetches the remaining source dependencies, including the pinned
+`nim-libp2p-mix` revision.
+
+Building only `.#lgx`, as in the root README, produces the Mix bundle; the
+seven-host fixture needs the other three module bundles and Logos Core as well.
+
+```sh
+export MIX_RLN_ROOT="$PWD"
+export E2E_DEPS_ROOT="$(dirname "$MIX_RLN_ROOT")/logos-mix-rln-e2e-deps"
+export RLN_E2E_ROOT="$E2E_DEPS_ROOT/logos-rln-e2e"
+export LEZ_RLN_CHECKOUT="$E2E_DEPS_ROOT/logos-lez-rln"
+
+mkdir -p "$E2E_DEPS_ROOT"
+git clone https://github.com/logos-co/logos-rln-e2e.git "$RLN_E2E_ROOT"
+git clone https://github.com/logos-co/logos-lez-rln.git "$LEZ_RLN_CHECKOUT"
+
+git -C "$RLN_E2E_ROOT" checkout --detach 747ad6fd6704645fbb8c70501432c6d236654a78
+git -C "$LEZ_RLN_CHECKOUT" checkout --detach 7ea94fc8c42c9a50a49bb291eea17962f88ff0dc
+
+# Build the local-chain guest programs and provisioning tools.
+(
+  cd "$LEZ_RLN_CHECKOUT/lez-rln"
+  cargo risczero build --manifest-path methods/guest/Cargo.toml
+  PYO3_PYTHON="$(command -v python3)" cargo build --release \
+    --bin run_setup --bin derive_accounts --bin mint_payer --bin fund_account
+)
+
+nix build .#lgx --no-write-lock-file --out-link result-mix
+
+DELIVERY_MODULE_REV=fba4da35b1d8193fc30e34a7c007e621ba16b5ad
+DELIVERY_FLAKE="github:richard-ramos/logos-delivery-module/$DELIVERY_MODULE_REV"
+nix build "$DELIVERY_FLAKE#lgx" \
+  --no-write-lock-file --out-link result-delivery
+nix build "$DELIVERY_FLAKE#liblogos_rln_module-lgx" \
+  --no-write-lock-file --out-link result-rln
+nix build "$DELIVERY_FLAKE#liblogos_lez_rln_module-lgx" \
+  --no-write-lock-file --out-link result-lez-rln
+nix build "$RLN_E2E_ROOT#logoscore" \
+  --no-write-lock-file --out-link result-logoscore
+
+export LOGOSCORE="$MIX_RLN_ROOT/result-logoscore/bin/logoscore"
+export MIX_LGX="$MIX_RLN_ROOT/result-mix/logos-libp2p_mix_rln_module-module-lib.lgx"
+export DELIVERY_LGX="$MIX_RLN_ROOT/result-delivery/logos-delivery_module-module-lib.lgx"
+export RLN_LGX="$MIX_RLN_ROOT/result-rln/logos-liblogos_rln_module-module-lib.lgx"
+export LEZ_RLN_LGX="$MIX_RLN_ROOT/result-lez-rln/logos-liblogos_lez_rln_module-module-lib.lgx"
+
+ln -s "$MIX_RLN_ROOT/tests/integration_e2e/shared_delivery_mix" \
   "$RLN_E2E_ROOT/scenarios/shared-delivery-mix"
 "$RLN_E2E_ROOT/run.sh" shared-delivery-mix --target local
 ```
 
-Build the registry bundle through this project's flake so it uses the upstream
-wallet override, then set `LEZ_RLN_LGX` to the resulting `.lgx` file:
-
-```sh
-nix build --impure --out-link result-registry --expr \
-  '(builtins.getFlake ("git+file://" + toString ./.)).inputs.liblogos_rln_module.inputs.liblogos_lez_rln_module.packages.${builtins.currentSystem}.lgx'
-```
-
 The harness owns chain provisioning, daemon logs, and artifact installation.
-Follow its local-target instructions to build the guest programs, host tools,
-and sequencer first. Use an isolated sequencer checkout for this test: the
-harness's host target starts a fresh local chain. An already provisioned local
+The first run may also compile the sequencer. Use the isolated checkout above:
+the harness's local target starts a fresh chain. An already provisioned local
 chain can instead be selected with the harness's external-target environment
 settings. Before registering memberships on a fresh chain, ensure `CLOCK_50`
 has received its first update (block 50 or later). Memberships registered

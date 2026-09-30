@@ -280,12 +280,10 @@ record: peer ID, multiaddresses, Mix public key, libp2p public key, and
 no separate exit capability. Logos application sends name their destination as
 the final Mix hop. All participants need usable peer pools.
 
-Native Delivery classifies Mix-only peers through its generic pure-libp2p
-admission path after Identify. A standalone Mix peer does not need to implement
-Waku metadata, but the deployment must enable the pure-libp2p peer budget; the
-network presets currently set it to 50. Adding a Mix record does not bypass a
-zero budget, and peers advertising Waku metadata still undergo the normal
-cluster check.
+Native Delivery admits an explicitly registered Mix-only peer after Identify,
+even when the generic pure-libp2p peer budget is zero. Unregistered pure-libp2p
+peers remain subject to that budget. A peer advertising Waku metadata still
+undergoes the normal cluster check.
 
 Discovery remains host-managed. This API does not implement Logos Service
 Discovery or validate a peer's registry membership merely by adding its record.

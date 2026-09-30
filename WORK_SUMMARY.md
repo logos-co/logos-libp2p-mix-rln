@@ -1,10 +1,17 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-18. FFI #2 and Logos module #2 are merged. This follow-up
-includes the shared-only cleanup that landed after the module merge and pins
-FFI upstream `main` at `97fc94eb5ecd2ed884eda9b5b4bb55430f8248c0`.
+Updated: 2026-09-29. The current integration chain is:
 
- Standalone Mix now requires the shared RLN backend;
+- Core Mix #58: `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba`
+- Mix plugin #22: `ac83f368e286c033e72fbd08dc63a4a802cfac0d`
+- Shared RLN #27: `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`
+- Native Delivery #4282: `0701e3c916c71831a695c43ffd40d3c8ba5941ab`
+- Delivery module #125: `fba4da35b1d8193fc30e34a7c007e621ba16b5ad`
+- Standalone FFI `main`: `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`
+  (merge commit for FFI #7)
+
+FFI #2, FFI #7, and Logos module #2 are merged. The five integration PRs
+listed above remain open. Standalone Mix now requires the shared RLN backend;
 the embedded provider and direct Zerokit v2 dependency are removed. The FFI
 repository is renamed to `logos-co/nim-libp2p-mix-ffi`. Its removal and rename
 commits are published. TCP/QUIC C smoke tests pass with mock backend callbacks.
@@ -60,6 +67,16 @@ The shared backend still owns its cryptographic dependencies.
 
 Completed locally:
 
+- The latest dependency chain built and passed the seven-host fixture. Delivery
+  keeps explicitly registered standalone Mix peers even when the generic
+  pure-libp2p budget is zero; unregistered peers remain budget-limited. The
+  focused peer-admission regression passed, Delivery module #125 rebuilt from
+  the final #4282 head, every scoped membership became active, and the exact
+  `Delivery Required` payload reached the recipient through all three
+  standalone intermediates. After stopping them, ordinary Relay delivery
+  remained usable while Required traffic did not bypass Mix.
+  Run:
+  `/tmp/mix-rln-e2e/runs/20260929-193640-shared-delivery-mix-local`.
 - Core Mix: **165 unit tests** and **34 component tests** passed after async
   integration and cancellation cleanup, including the cancellation regression
   assertion.
@@ -163,32 +180,21 @@ Those limits are described in the README.
 
 ## PRs and publication state
 
-Core Mix #58 now includes commit `5803d68741eb54ea56ac0f91bc4e8f4caf34ce8e`.
-Consumers pin functional revision `29eaaf1`; the later commits only refresh
-the core repository's Nix dependency snapshot, which builds successfully and
-passes the remote Nix drift/build check.
-Plugin #22 includes `4cb0b16f8a9f3d7e8b1e759e2179277fb6bbd519`. Native Delivery
-#4282 contains `f263eafaba91f4a7831ccc994ceda5bb69db41ec`; Delivery module #125
-pins it at `f8b51259da617003a75d5d23b72231fb5c27a0b6`. Their public peer records omit the obsolete
-`exitEnabled` capability. The FFI shared-only change is published as `67765f6`; repository rename
-`e13dbdc` was the renamed-repository pin. The current upstream-main pin is
-`97fc94eb5ecd2ed884eda9b5b4bb55430f8248c0`, with an identical FFI source tree.
-This branch contains the Logos module bridge, current architecture docs, and
-new local-chain network fixture. The complete fresh-host positive and negative fixture passed.
+The current open PR heads are Core Mix #58
+`d4aeff5f032563fc0f9b042a1c8c049d9fa69fba`, Mix plugin #22
+`ac83f368e286c033e72fbd08dc63a4a802cfac0d`, Shared RLN #27
+`63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`, Native Delivery #4282
+`0701e3c916c71831a695c43ffd40d3c8ba5941ab`, and Delivery module #125
+`fba4da35b1d8193fc30e34a7c007e621ba16b5ad`.
 
-The shared backend pin is
-`63bb541d18c53e3c6e261421ee9eb8c2fd8445ca` from shared RLN #27.
-The explicit `logos-execution-zone` override above retains the corrected
-configured-gas fee cap. The complete fresh-host fixture passed with this
-backend and wallet pin, Native Delivery `f5fbe4a`, and Delivery module
-`33e149d`; run
-`/tmp/mix-rln-e2e/runs/20260928-205756-shared-delivery-mix-local`. Per the
-follow-up decision, it was not rerun for the subsequent peer-record schema or
-peer-admission cleanup (`f263eaf` / `f8b5125`). The focused Delivery
-peer-manager suite and Delivery-module Linux unit-test derivation pass at those
-revisions.
-This replaces the older `feat/lip-alignment` baseline so local-chain layouts
-match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
+FFI #7 merged as `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`;
+this module pins that `main` commit rather than the PR head. It contains the
+latest Core Mix and Mix plugin pins. The shared and registry module inputs both
+pin Shared RLN #27. Native Delivery pins the same Core Mix and Mix plugin
+revisions, and Delivery module #125 pins Native Delivery #4282.
+
+The compatible `logos-lez-rln` checkout remains
+`7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 
 - [Core Mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58)
 - [Mix plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22)
@@ -201,6 +207,7 @@ match `logos-lez-rln` revision `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc`.
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
 - [Delivery module #125](https://github.com/logos-co/logos-delivery-module/pull/125)
 - [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/2) — merged.
+- [Standalone FFI #7](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/7) — merged.
 - [Logos module #2](https://github.com/logos-co/logos-libp2p-mix-rln/pull/2) — merged before the shared-only cleanup.
 - [Zerokit #436](https://github.com/vacp2p/zerokit/pull/436) is **closed**.
   The shared-RLN integration does not require it to merge. The standalone FFI
