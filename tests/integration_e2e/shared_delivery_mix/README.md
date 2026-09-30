@@ -33,6 +33,38 @@ The Mix module flake pins the first three Mix/RLN revisions and merged FFI
 `main`. Delivery module #125 pins the listed Delivery #4282 revision and
 exports the Delivery, shared RLN, and LEZ registry bundles used below.
 
+## Prerequisites
+
+The local target needs Nix with flakes enabled, Rust/Cargo, Docker, and the
+standard `git`, `jq`, `curl`, `python3`, `rsync`, and `tar` tools.
+Port 3040 must be free before using `--target local`; use the harness's
+external-target settings when intentionally attaching to an existing
+sequencer.
+
+The host provisioning binaries also require `pkg-config` and the PC/SC
+development library. Install the packages for your distribution:
+
+```sh
+# Debian or Ubuntu
+sudo apt install pkgconf libpcsclite-dev
+
+# Arch Linux
+sudo pacman -S pkgconf pcsclite
+
+# Fedora
+sudo dnf install pkgconf pcsc-lite-devel
+```
+
+Install the RISC Zero Cargo subcommand before building the LEZ guest programs;
+this is the same setup used by `logos-lez-rln` CI:
+
+```sh
+curl -L https://risczero.com/install | bash
+export PATH="$HOME/.risc0/bin:$PATH"
+rzup install
+cargo risczero --version
+```
+
 ## Build and run
 
 For a new workspace, clone this repository first. Skip this block if you are
@@ -59,6 +91,7 @@ export MIX_RLN_ROOT="$PWD"
 export E2E_DEPS_ROOT="$(dirname "$MIX_RLN_ROOT")/logos-mix-rln-e2e-deps"
 export RLN_E2E_ROOT="$E2E_DEPS_ROOT/logos-rln-e2e"
 export LEZ_RLN_CHECKOUT="$E2E_DEPS_ROOT/logos-lez-rln"
+export NIX_CONFIG="experimental-features = nix-command flakes"
 
 mkdir -p "$E2E_DEPS_ROOT"
 git clone https://github.com/logos-co/logos-rln-e2e.git "$RLN_E2E_ROOT"
@@ -71,22 +104,17 @@ git -C "$LEZ_RLN_CHECKOUT" checkout --detach 7ea94fc8c42c9a50a49bb291eea17962f88
 (
   cd "$LEZ_RLN_CHECKOUT/lez-rln"
   cargo risczero build --manifest-path methods/guest/Cargo.toml
-  PYO3_PYTHON="$(command -v python3)" cargo build --release \
-    --bin run_setup --bin derive_accounts --bin mint_payer --bin fund_account
+  PYO3_PYTHON="$(command -v python3)" cargo build --release --bin run_setup --bin derive_accounts --bin mint_payer --bin fund_account
 )
 
 nix build .#lgx --no-write-lock-file --out-link result-mix
 
 DELIVERY_MODULE_REV=fba4da35b1d8193fc30e34a7c007e621ba16b5ad
 DELIVERY_FLAKE="github:richard-ramos/logos-delivery-module/$DELIVERY_MODULE_REV"
-nix build "$DELIVERY_FLAKE#lgx" \
-  --no-write-lock-file --out-link result-delivery
-nix build "$DELIVERY_FLAKE#liblogos_rln_module-lgx" \
-  --no-write-lock-file --out-link result-rln
-nix build "$DELIVERY_FLAKE#liblogos_lez_rln_module-lgx" \
-  --no-write-lock-file --out-link result-lez-rln
-nix build "$RLN_E2E_ROOT#logoscore" \
-  --no-write-lock-file --out-link result-logoscore
+nix build "${DELIVERY_FLAKE}#lgx" --no-write-lock-file --out-link result-delivery
+nix build "${DELIVERY_FLAKE}#liblogos_rln_module-lgx" --no-write-lock-file --out-link result-rln
+nix build "${DELIVERY_FLAKE}#liblogos_lez_rln_module-lgx" --no-write-lock-file --out-link result-lez-rln
+nix build "${RLN_E2E_ROOT}#logoscore" --no-write-lock-file --out-link result-logoscore
 
 export LOGOSCORE="$MIX_RLN_ROOT/result-logoscore/bin/logoscore"
 export MIX_LGX="$MIX_RLN_ROOT/result-mix/logos-libp2p_mix_rln_module-module-lib.lgx"
@@ -94,8 +122,7 @@ export DELIVERY_LGX="$MIX_RLN_ROOT/result-delivery/logos-delivery_module-module-
 export RLN_LGX="$MIX_RLN_ROOT/result-rln/logos-liblogos_rln_module-module-lib.lgx"
 export LEZ_RLN_LGX="$MIX_RLN_ROOT/result-lez-rln/logos-liblogos_lez_rln_module-module-lib.lgx"
 
-ln -s "$MIX_RLN_ROOT/tests/integration_e2e/shared_delivery_mix" \
-  "$RLN_E2E_ROOT/scenarios/shared-delivery-mix"
+ln -s "$MIX_RLN_ROOT/tests/integration_e2e/shared_delivery_mix" "$RLN_E2E_ROOT/scenarios/shared-delivery-mix"
 "$RLN_E2E_ROOT/run.sh" shared-delivery-mix --target local
 ```
 
