@@ -227,7 +227,8 @@ receivers still send cover packets.
 The module constructor defers node creation until the host
 and backend are available. Loading the module, or setting the configuration
 environment variable, does not replace the explicit `createNode()` call.
-`ok()` reports initialization errors, not network readiness or active membership.
+`ok()` confirms the module is loaded; creation errors are returned by
+`createNode()`. It does not report network readiness or active membership.
 
 [`config.example.json`](config.example.json) provides the standalone settings.
 Replace its registry placeholder with the real registry ID:
@@ -251,7 +252,9 @@ Replace its registry placeholder with the real registry ID:
 `LIBP2P_MIX_RLN_MODULE_CONFIG` accepts inline JSON or a file path.
 `createNode(configJson)` supplies explicit node configuration. Stop a running
 node before replacing it. For QUIC use `transport: "quic"` and a QUIC listen
-address such as `/ip4/0.0.0.0/udp/9100/quic-v1`.
+address such as `/ip4/0.0.0.0/udp/9100/quic-v1`. Configuration and its nested
+sections must be JSON objects; invalid section types and unknown transports
+are rejected by `createNode()`.
 
 Native Delivery Mix uses its own configuration fields:
 

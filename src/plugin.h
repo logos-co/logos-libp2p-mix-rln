@@ -136,14 +136,7 @@ public:
     LibMixRlnCtx* m_ctx = nullptr;
     Libp2pMixRlnModuleOptions m_options;
 
-    // Set by the constructor if the initial createNode failed. Surfaced by
-    // status() since the constructor cannot signal failure to the codegen
-    // default-constructor.
-    std::string m_initError;
-
-    // Serialize op submission: nim-ffi's C API is thread-safe for the async
-    // dispatch, but our sync-over-async waiter would race if two ops queued
-    // simultaneously and their replies interleaved into the same promise.
+    // Serialize node operations against replacement and teardown.
     std::mutex m_callMutex;
 
     // Incoming-message events fire from the nim-ffi dispatch thread; the

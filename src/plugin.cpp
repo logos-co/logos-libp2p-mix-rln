@@ -22,16 +22,26 @@ void nim_main_thunk() { liblibp2p_mix_rlnNimMain(); }
 
 constexpr char kModuleVersion[] = "0.1.0";
 
-// Awaits a heap-allocated promise's future. The reply callback OWNS the
-// promise: on submit-time failure the callback fires synchronously and
-// deletes it; otherwise the dispatch thread does it later. We heap-allocate
-// so a timed-out wait doesn't UAF the promise.
-SyncResult awaitPromise(std::future<SyncResult>& f, int timeoutMs) {
-    if (f.wait_for(std::chrono::milliseconds(timeoutMs)) == std::future_status::ready) {
-        return f.get();
+// The callback owns the promise, including after a timeout. A failed submission
+// either invokes it synchronously or leaves ownership with this caller.
+template <class Submit>
+SyncResult submitAndWait(const char* operation, int timeoutMs, Submit&& submit) {
+    auto* p = new std::promise<SyncResult>();
+    auto f = p->get_future();
+    int ret = submit(p);
+    if (ret != 0) {
+        if (f.wait_for(std::chrono::seconds(0)) != std::future_status::ready) delete p;
+        SyncResult r;
+        r.message = std::string(operation) + " submit failed (ret=" + std::to_string(ret) + ")";
+        return r;
     }
     SyncResult r;
-    r.message = "timeout";
+    if (f.wait_for(std::chrono::milliseconds(timeoutMs)) == std::future_status::ready) {
+        r = f.get();
+    } else {
+        r.message = "timeout";
+    }
+    if (!r.ok) r.message = std::string(operation) + ": " + r.message;
     return r;
 }
 
@@ -46,19 +56,6 @@ inline SyncResult baseReply(int ec, const char* em) {
     SyncResult r;
     r.ok = (ec == 0);
     if (!r.ok) r.message = em ? em : "FFI call failed";
-    return r;
-}
-
-// If a submit-time call returns non-OK AND the callback didn't fire
-// synchronously (which would delete the promise), reclaim it here.
-inline SyncResult reclaimOnSubmitFail(std::promise<SyncResult>* p,
-                                      std::future<SyncResult>& f,
-                                      int ret, const char* errPrefix) {
-    if (f.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
-        delete p;
-    }
-    SyncResult r;
-    r.message = std::string(errPrefix) + " submit failed (ret=" + std::to_string(ret) + ")";
     return r;
 }
 
@@ -295,7 +292,7 @@ Libp2pMixRlnModuleImpl::~Libp2pMixRlnModuleImpl() {
     }
 }
 
-bool Libp2pMixRlnModuleImpl::ok() { return m_initError.empty(); }
+bool Libp2pMixRlnModuleImpl::ok() { return true; }
 
 StdLogosResult Libp2pMixRlnModuleImpl::status() {
     std::lock_guard<std::mutex> lk(m_callMutex);
@@ -303,13 +300,12 @@ StdLogosResult Libp2pMixRlnModuleImpl::status() {
         {"version", kModuleVersion},
         {"state",   m_ctx ? "created" : "uninitialized"},
     };
-    if (!m_initError.empty()) j["initError"] = m_initError;
     return {true, j, ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson) {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    // If caller supplied a fresh JSON config, re-parse over m_options.
+    // Explicit configuration replaces the defaults or previous configuration.
     if (!configJson.empty()) {
         bool ok = false;
         std::string err;
@@ -332,15 +328,10 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
     }
 
     FfiConfigBundle bundle(m_options);
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_create(&bundle.cfg, cbCreate, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "createNode");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kCreateTimeoutMs);
-    if (!r.ok) return {false, {}, "createNode: " + r.message};
+    auto r = submitAndWait("createNode", kCreateTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_create(&bundle.cfg, cbCreate, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     m_ctx = r.newCtx;
 
     // Register event listeners now that we have a ctx. Passing `this` as ud so
@@ -368,15 +359,8 @@ namespace {
 template <class Submit>
 StdLogosResult submitBool(LibMixRlnCtx* ctx, const char* errPrefix, int timeoutMs, Submit&& submit) {
     if (!ctx) return {false, {}, std::string(errPrefix) + ": node not created"};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = submit(p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, errPrefix);
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, timeoutMs);
-    if (!r.ok) return {false, {}, std::string(errPrefix) + ": " + r.message};
+    auto r = submitAndWait(errPrefix, timeoutMs, submit);
+    if (!r.ok) return {false, {}, r.message};
     return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
 }
 } // namespace
@@ -411,15 +395,10 @@ StdLogosResult Libp2pMixRlnModuleImpl::getNodeInfo(const std::string& field) {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "getNodeInfo: node not created"};
     NodeInfoRequest req{fld};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_get_node_info(m_ctx, &req, cbNodeInfo, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "getNodeInfo");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "getNodeInfo: " + r.message};
+    auto r = submitAndWait("getNodeInfo", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_get_node_info(m_ctx, &req, cbNodeInfo, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, r.strValue, ""};
 }
 
@@ -428,30 +407,20 @@ StdLogosResult Libp2pMixRlnModuleImpl::getNodeInfo(const std::string& field) {
 StdLogosResult Libp2pMixRlnModuleImpl::registerRlnMembership() {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "registerRlnMembership: node not created"};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_register_rln_membership(m_ctx, cbMembership, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "registerRlnMembership");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "registerRlnMembership: " + r.message};
+    auto r = submitAndWait("registerRlnMembership", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_register_rln_membership(m_ctx, cbMembership, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, json{{"registered", r.boolValue}, {"index", r.intValue}}, ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::hasRlnMembership() {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "hasRlnMembership: node not created"};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_has_rln_membership(m_ctx, cbMembership, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "hasRlnMembership");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "hasRlnMembership: " + r.message};
+    auto r = submitAndWait("hasRlnMembership", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_has_rln_membership(m_ctx, cbMembership, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, json{{"registered", r.boolValue}, {"index", r.intValue}}, ""};
 }
 
@@ -462,8 +431,7 @@ static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
                                     const std::string& destPeerId,
                                     const std::string& proto,
                                     const std::vector<uint8_t>& payload,
-                                    bool expectReply,
-                                    LibMixRlnSendMixMessageReplyFn cb) {
+                                    bool expectReply) {
     if (!ctx) return {false, {}, "sendMixMessage: node not created"};
     MixSendRequest req{};
     req.destPeerId    = borrowStr(destPeerId);
@@ -474,15 +442,10 @@ static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
     req.numSurbs      = expectReply ? 1 : 0;
     req.timeoutMs     = kDefaultOpTimeoutMs;
 
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_send_mix_message(ctx, &req, cb, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "sendMixMessage");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs + 5000);
-    if (!r.ok) return {false, {}, "sendMixMessage: " + r.message};
+    auto r = submitAndWait("sendMixMessage", kDefaultOpTimeoutMs + 5000, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_send_mix_message(ctx, &req, cbMixSend, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, std::move(r.jsonValue), ""};
 }
 
@@ -491,7 +454,7 @@ StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessage(const std::string& destPee
                                                       const std::vector<uint8_t>& payload) {
     std::lock_guard<std::mutex> lk(m_callMutex);
     return submitMixSend(m_ctx, destPeerId, proto, payload,
-                         /*expectReply=*/false, cbMixSend);
+                         /*expectReply=*/false);
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageWithSurb(const std::string& destPeerId,
@@ -499,7 +462,7 @@ StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageWithSurb(const std::string&
                                                               const std::vector<uint8_t>& payload) {
     std::lock_guard<std::mutex> lk(m_callMutex);
     return submitMixSend(m_ctx, destPeerId, proto, payload,
-                         /*expectReply=*/true, cbMixSend);
+                         /*expectReply=*/true);
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::sendMixSurbReply(const std::vector<uint8_t>& surb,
@@ -511,15 +474,10 @@ StdLogosResult Libp2pMixRlnModuleImpl::sendMixSurbReply(const std::vector<uint8_
     req.surb.len     = surb.size();
     req.payload.data = const_cast<uint8_t*>(payload.data());
     req.payload.len  = payload.size();
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_send_mix_surb_reply(m_ctx, &req, cbBool, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "sendMixSurbReply");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "sendMixSurbReply: " + r.message};
+    auto r = submitAndWait("sendMixSurbReply", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_send_mix_surb_reply(m_ctx, &req, cbBool, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, json{{"ok", r.boolValue}}, ""};
 }
 
@@ -528,15 +486,10 @@ StdLogosResult Libp2pMixRlnModuleImpl::sendMixSurbReply(const std::vector<uint8_
 StdLogosResult Libp2pMixRlnModuleImpl::listMixPeers() {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "listMixPeers: node not created"};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_list_mix_peers(m_ctx, cbMixPeers, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "listMixPeers");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "listMixPeers: " + r.message};
+    auto r = submitAndWait("listMixPeers", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_list_mix_peers(m_ctx, cbMixPeers, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, r.jsonValue, ""};
 }
 
@@ -581,15 +534,10 @@ void cbGetLocalMixPeerRecord(int ec, const MixPeerRecord* r,
 StdLogosResult Libp2pMixRlnModuleImpl::getLocalMixPeerRecord() {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "getLocalMixPeerRecord: node not created"};
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_get_local_mix_peer_record(m_ctx, cbGetLocalMixPeerRecord, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "getLocalMixPeerRecord");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "getLocalMixPeerRecord: " + r.message};
+    auto r = submitAndWait("getLocalMixPeerRecord", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_get_local_mix_peer_record(m_ctx, cbGetLocalMixPeerRecord, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, r.jsonValue, ""};
 }
 
@@ -645,15 +593,10 @@ StdLogosResult Libp2pMixRlnModuleImpl::addMixPeer(const std::string& recordJson)
     rec.libp2pPubKeyHex = NimFfiStr{const_cast<char*>(libp2pPubKeyHex.c_str()),
                                     libp2pPubKeyHex.size()};
 
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_add_mix_peer(m_ctx, &rec, cbBool, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "addMixPeer");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "addMixPeer: " + r.message};
+    auto r = submitAndWait("addMixPeer", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_add_mix_peer(m_ctx, &rec, cbBool, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
 }
 
@@ -667,15 +610,10 @@ StdLogosResult Libp2pMixRlnModuleImpl::mountReceiver(
     req.codec   = NimFfiStr{const_cast<char*>(codec.c_str()), codec.size()};
     req.maxSize = maxSize > 0 ? maxSize : 1 << 20;
 
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_mount_receiver(m_ctx, &req, cbBool, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "mountReceiver");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "mountReceiver: " + r.message};
+    auto r = submitAndWait("mountReceiver", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_mount_receiver(m_ctx, &req, cbBool, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
 }
 
@@ -695,15 +633,10 @@ StdLogosResult Libp2pMixRlnModuleImpl::deliverCoordFrame(
     frame.data.data    = payload.data();
     frame.data.len     = payload.size();
 
-    auto* p = new std::promise<SyncResult>();
-    auto f = p->get_future();
-    int ret = libp2p_mix_rln_ctx_deliver_coord_frame(m_ctx, &frame, cbBool, p);
-    if (ret != 0) {
-        auto r = reclaimOnSubmitFail(p, f, ret, "deliverCoordFrame");
-        return {false, {}, r.message};
-    }
-    auto r = awaitPromise(f, kDefaultOpTimeoutMs);
-    if (!r.ok) return {false, {}, "deliverCoordFrame: " + r.message};
+    auto r = submitAndWait("deliverCoordFrame", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_deliver_coord_frame(m_ctx, &frame, cbBool, p);
+    });
+    if (!r.ok) return {false, {}, r.message};
     return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
 }
 
