@@ -97,26 +97,20 @@ inline std::vector<uint8_t> decodeHex(const std::string& in) {
     return out;
 }
 
-inline TransportKind parseTransport(const nlohmann::json& j, TransportKind fallback) {
-    auto it = j.find("transport");
-    if (it == j.end() || !it->is_string()) return fallback;
-    std::string t = it->get<std::string>();
-    if (t == "tcp") return TransportKind::Tcp;
-    if (t == "quic" || t == "quic-v1") return TransportKind::Quic;
-    return fallback;
-}
-
 inline void applyMix(const nlohmann::json& j, MixOptions& m) {
+    if (!j.is_object()) throw std::invalid_argument("mix must be an object");
     if (auto it = j.find("mixPrivKey"); it != j.end()) {
         if (!it->is_string()) throw std::invalid_argument("mix.mixPrivKey must be a string");
         m.mixPrivKey = decodeHex(it->get<std::string>());
     }
-    if (auto it = j.find("cover"); it != j.end() && it->is_object()) {
+    if (auto it = j.find("cover"); it != j.end()) {
+        if (!it->is_object()) throw std::invalid_argument("mix.cover must be an object");
         m.coverRateFraction = it->value("rateFraction", m.coverRateFraction);
     }
 }
 
 inline void applyRln(const nlohmann::json& j, RlnOptions& r) {
+    if (!j.is_object()) throw std::invalid_argument("rln must be an object");
     for (const char* key : {"provider", "keystorePath", "keystorePassword",
                             "treePath", "rlnResourcesPath", "membershipContentTopic"}) {
         if (j.contains(key))
@@ -133,10 +127,13 @@ inline void applyRln(const nlohmann::json& j, RlnOptions& r) {
 }
 
 inline void apply(const nlohmann::json& j, Libp2pMixRlnModuleOptions& o) {
-    if (!j.is_object()) return;
+    if (!j.is_object()) throw std::invalid_argument("config must be an object");
 
     o.addrs = j.value("addrs", o.addrs);
-    o.transport = parseTransport(j, o.transport);
+    const auto transport = j.value("transport", std::string("tcp"));
+    if (transport == "tcp") o.transport = TransportKind::Tcp;
+    else if (transport == "quic" || transport == "quic-v1") o.transport = TransportKind::Quic;
+    else throw std::invalid_argument("transport must be tcp or quic");
     if (auto it = j.find("privKey"); it != j.end()) {
         if (!it->is_string()) throw std::invalid_argument("privKey must be a string");
         o.privKey = decodeHex(it->get<std::string>());
@@ -144,8 +141,8 @@ inline void apply(const nlohmann::json& j, Libp2pMixRlnModuleOptions& o) {
     o.maxConnections = j.value("maxConnections", o.maxConnections);
     o.maxConnsPerPeer = j.value("maxConnsPerPeer", o.maxConnsPerPeer);
 
-    if (auto it = j.find("mix"); it != j.end() && it->is_object()) applyMix(*it, o.mix);
-    if (auto it = j.find("rln"); it != j.end() && it->is_object()) applyRln(*it, o.rln);
+    if (auto it = j.find("mix"); it != j.end()) applyMix(*it, o.mix);
+    if (auto it = j.find("rln"); it != j.end()) applyRln(*it, o.rln);
 }
 
 } // namespace libp2p_mix_rln_config
