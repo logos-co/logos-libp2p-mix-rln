@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: macOS
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+      - name: Run unit tests
+        run: nix build .#unit-tests --no-write-lock-file
+      - name: Build module
+        run: nix build .#lgx --no-write-lock-file
+
+  wsl:
+    name: Build and test (WSL x86_64-linux)
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: wsl-bash {0}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Ubuntu-24.04
+      - name: Install Nix
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
+            | sh -s -- install linux --init none --no-confirm
+      - name: Run unit tests
+        run: /nix/var/nix/profiles/default/bin/nix build .#unit-tests --no-write-lock-file
+      - name: Build module
+        run: /nix/var/nix/profiles/default/bin/nix build .#lgx --no-write-lock-file
