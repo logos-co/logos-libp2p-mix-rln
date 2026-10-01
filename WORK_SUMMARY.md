@@ -1,17 +1,18 @@
 # Mix / Delivery / shared RLN work summary
 
-Updated: 2026-09-30. The current integration chain is:
+Updated: 2026-10-01. The current integration chain is:
 
 - Core Mix #58: `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba`
 - Mix plugin #22: `ac83f368e286c033e72fbd08dc63a4a802cfac0d`
-- Shared RLN #27: `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`
+- Shared RLN `main`: `91ecf7f042b8ffde86e5a1d38c441e988683bf1c`
+  (merge commit for #27)
 - Native Delivery #4282: `5becb59bc530435ba02a2c4f4be596f3d93e86c6`
 - Delivery module #148: `ca1fe40c665b412c5d477020f3c38c33854d5054`
 - Standalone FFI `main`: `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`
   (merge commit for FFI #7)
 
-FFI #2, FFI #7, and Logos module #2 are merged. The five integration PRs
-listed above remain open. Standalone Mix now requires the shared RLN backend;
+FFI #2, FFI #7, Shared RLN #27, and Logos module #2 are merged. The other four
+integration PRs listed above remain open. Standalone Mix now requires the shared RLN backend;
 the embedded provider and direct Zerokit v2 dependency are removed. The FFI
 repository is renamed to `logos-co/nim-libp2p-mix-ffi`. Its removal and rename
 commits are published. TCP/QUIC C smoke tests pass with mock backend callbacks.
@@ -183,15 +184,15 @@ Those limits are described in the README.
 
 The current open PR heads are Core Mix #58
 `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba`, Mix plugin #22
-`ac83f368e286c033e72fbd08dc63a4a802cfac0d`, Shared RLN #27
-`63bb541d18c53e3c6e261421ee9eb8c2fd8445ca`, Native Delivery #4282
+`ac83f368e286c033e72fbd08dc63a4a802cfac0d`, Native Delivery #4282
 `5becb59bc530435ba02a2c4f4be596f3d93e86c6`, and Delivery module #148
 `ca1fe40c665b412c5d477020f3c38c33854d5054`.
 
+Shared RLN #27 merged as `91ecf7f042b8ffde86e5a1d38c441e988683bf1c`;
+the shared and registry module inputs both pin that upstream `main` commit.
 FFI #7 merged as `3fa97a884320a63a1c4a381da7cd625b7ec02cb4`;
 this module pins that `main` commit rather than the PR head. It contains the
-latest Core Mix and Mix plugin pins. The shared and registry module inputs both
-pin Shared RLN #27. Native Delivery pins the same Core Mix and Mix plugin
+latest Core Mix and Mix plugin pins. Native Delivery pins the same Core Mix and Mix plugin
 revisions, and Delivery module #148 pins Native Delivery #4282.
 
 The compatible `logos-lez-rln` checkout remains
@@ -204,7 +205,7 @@ The compatible `logos-lez-rln` checkout remains
   The root flake now pins this upstream wallet through the registry module's
   nested input. Earlier integration runs used fork commit
   `6752be252e441717ab934013cce101379ea4966b`; that fork PR is closed.
-- [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27)
+- [Shared RLN #27](https://github.com/logos-co/logos-rln-modules/pull/27) — merged.
 - [Native Delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282)
 - [Delivery module #148](https://github.com/logos-co/logos-delivery-module/pull/148) — supersedes the reverted #125.
 - [Standalone FFI #2](https://github.com/logos-co/nim-libp2p-mix-ffi/pull/2) — merged.

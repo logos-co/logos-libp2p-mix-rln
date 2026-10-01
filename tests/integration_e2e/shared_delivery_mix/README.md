@@ -22,7 +22,7 @@ Use this dependency set for the next complete fixture run:
 | --- | --- |
 | [nim-libp2p-mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58) | `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba` |
 | [mix-rln-spam-protection-plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) | `ac83f368e286c033e72fbd08dc63a4a802cfac0d` |
-| [logos-rln-modules #27](https://github.com/logos-co/logos-rln-modules/pull/27) | `63bb541d18c53e3c6e261421ee9eb8c2fd8445ca` |
+| logos-rln-modules `main` ([merged #27](https://github.com/logos-co/logos-rln-modules/pull/27)) | `91ecf7f042b8ffde86e5a1d38c441e988683bf1c` |
 | [logos-delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282) | `5becb59bc530435ba02a2c4f4be596f3d93e86c6` |
 | [logos-delivery-module #148](https://github.com/logos-co/logos-delivery-module/pull/148) | `ca1fe40c665b412c5d477020f3c38c33854d5054` |
 | nim-libp2p-mix-ffi `main` (merged #7) | `3fa97a884320a63a1c4a381da7cd625b7ec02cb4` |
