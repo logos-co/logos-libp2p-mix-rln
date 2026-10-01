@@ -65,6 +65,29 @@ LOGOS_TEST(from_json_rejects_malformed) {
     LOGOS_ASSERT_FALSE(err.empty());
 }
 
+LOGOS_TEST(from_json_rejects_invalid_shapes_and_transport) {
+    for (const char* raw : {"null", "[]", "42", R"("config")",
+                            R"({"mix":false})", R"({"rln":[]})",
+                            R"({"mix":{"cover":0}})",
+                            R"({"transport":"udp"})", R"({"transport":1})"}) {
+        bool ok = true;
+        std::string error;
+        Libp2pMixRlnModuleOptions::fromJson(raw, ok, &error);
+        LOGOS_ASSERT_FALSE(ok);
+        LOGOS_ASSERT_FALSE(error.empty());
+    }
+}
+
+LOGOS_TEST(from_json_accepts_defaults_and_transport_alias) {
+    bool ok = false;
+    auto defaults = Libp2pMixRlnModuleOptions::fromJson("{}", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    LOGOS_ASSERT_TRUE(defaults.transport == TransportKind::Tcp);
+    auto quic = Libp2pMixRlnModuleOptions::fromJson(R"({"transport":"quic-v1"})", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    LOGOS_ASSERT_TRUE(quic.transport == TransportKind::Quic);
+}
+
 LOGOS_TEST(load_reads_env_inline_json) {
     ScopedModuleConfig s(R"({"maxConnections": 77})");
     auto o = Libp2pMixRlnModuleOptions::load();
