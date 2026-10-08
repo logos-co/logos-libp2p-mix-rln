@@ -36,6 +36,7 @@
 // Sized like logos-libp2p-module — long enough for a network create + RLN
 // initialization on a slow machine, short enough that a hang is caught.
 inline constexpr int kDefaultOpTimeoutMs = 10000;
+inline constexpr int kRlnOpTimeoutMs     = 110000;
 inline constexpr int kCreateTimeoutMs    = 30000;   // RLN init + Switch build
 inline constexpr int kStopTimeoutMs      = 15000;   // switch.stop over many conns
 

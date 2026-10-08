@@ -371,7 +371,7 @@ StdLogosResult submitBool(LibMixRlnCtx* ctx, const char* errPrefix, int timeoutM
 
 StdLogosResult Libp2pMixRlnModuleImpl::start() {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitBool(m_ctx, "start", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+    return submitBool(m_ctx, "start", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_start(m_ctx, cbBool, p);
     });
 }
@@ -395,7 +395,7 @@ StdLogosResult Libp2pMixRlnModuleImpl::getNodeInfo(const std::string& field) {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "getNodeInfo: node not created"};
     NodeInfoRequest req{fld};
-    auto r = submitAndWait("getNodeInfo", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+    auto r = submitAndWait("getNodeInfo", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_get_node_info(m_ctx, &req, cbNodeInfo, p);
     });
     if (!r.ok) return {false, {}, r.message};
@@ -407,7 +407,7 @@ StdLogosResult Libp2pMixRlnModuleImpl::getNodeInfo(const std::string& field) {
 StdLogosResult Libp2pMixRlnModuleImpl::registerRlnMembership() {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "registerRlnMembership: node not created"};
-    auto r = submitAndWait("registerRlnMembership", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+    auto r = submitAndWait("registerRlnMembership", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_register_rln_membership(m_ctx, cbMembership, p);
     });
     if (!r.ok) return {false, {}, r.message};
@@ -417,7 +417,7 @@ StdLogosResult Libp2pMixRlnModuleImpl::registerRlnMembership() {
 StdLogosResult Libp2pMixRlnModuleImpl::hasRlnMembership() {
     std::lock_guard<std::mutex> lk(m_callMutex);
     if (!m_ctx) return {false, {}, "hasRlnMembership: node not created"};
-    auto r = submitAndWait("hasRlnMembership", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+    auto r = submitAndWait("hasRlnMembership", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_has_rln_membership(m_ctx, cbMembership, p);
     });
     if (!r.ok) return {false, {}, r.message};
@@ -442,7 +442,7 @@ static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
     req.numSurbs      = expectReply ? 1 : 0;
     req.timeoutMs     = kDefaultOpTimeoutMs;
 
-    auto r = submitAndWait("sendMixMessage", kDefaultOpTimeoutMs + 5000, [&](std::promise<SyncResult>* p) {
+    auto r = submitAndWait("sendMixMessage", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_send_mix_message(ctx, &req, cbMixSend, p);
     });
     if (!r.ok) return {false, {}, r.message};

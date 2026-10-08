@@ -25,7 +25,7 @@ Use this dependency set for the next complete fixture run:
 | logos-rln-modules `main` ([merged #27](https://github.com/logos-co/logos-rln-modules/pull/27)) | `91ecf7f042b8ffde86e5a1d38c441e988683bf1c` |
 | [logos-delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282) | `5becb59bc530435ba02a2c4f4be596f3d93e86c6` |
 | [logos-delivery-module #148](https://github.com/logos-co/logos-delivery-module/pull/148) | `ca1fe40c665b412c5d477020f3c38c33854d5054` |
-| nim-libp2p-mix-ffi `main` (merged #7) | `3fa97a884320a63a1c4a381da7cd625b7ec02cb4` |
+| nim-libp2p-mix-ffi `main` (merged #9) | `4e0a21e301506d537207bdb856ec91fe519ccea0` |
 | logos-rln-e2e | `747ad6fd6704645fbb8c70501432c6d236654a78` |
 | logos-lez-rln | `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc` |
 
