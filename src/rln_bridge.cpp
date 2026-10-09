@@ -58,7 +58,8 @@ void MixRlnBridge::request(const RlnModuleRequestEvent& event) {
     const auto args = copy(event.argsJson);
     auto* pending = new Pending{m_context, event.requestId};
     const int timeout = method == "generate_proof" || method == "get_membership_state" ||
-                        method == "register_membership" ? 70000 : 9000;
+                        method == "get_registry_parameters" ||
+                        method == "register_membership" ? 90000 : 9000;
     const int rc = lp_invoke_async(m_client, method.c_str(), args.c_str(), timeout, reply, pending);
     if (rc != LP_OK) reply(0, "RLN call submission failed", pending);
 }
