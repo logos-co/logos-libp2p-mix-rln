@@ -327,9 +327,9 @@ nix build .#unit-tests --no-write-lock-file
 ```
 
 The unit target runs configuration tests, including default intermediate roles
-and rejection of removed embedded-provider settings. Dependencies span multiple open PRs; consult
-[WORK_SUMMARY.md](WORK_SUMMARY.md) before assuming all remote pins include the
-latest local integration changes.
+and rejection of removed embedded-provider settings. The tested cross-repository
+revisions and build commands are documented in the
+[shared Delivery network fixture](tests/integration_e2e/shared_delivery_mix).
 
 The new [shared Delivery network fixture](tests/integration_e2e/shared_delivery_mix)
 uses the `logos-rln-e2e` local target for chain provisioning, wallet funding,

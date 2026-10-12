@@ -14,26 +14,25 @@ Delivery switch running Relay for metadata coordination. These nodes join the
 Relay mesh directly; they do not enable Lightpush or Filter services. The sender
 and recipient remain light clients, supported by the exit and Relay service.
 
-## Current revisions
+## Tested revisions
 
-Use this dependency set for the next complete fixture run:
+The top-level flakes pin their transitive dependencies. Use these revisions for
+a reproducible fixture run:
 
 | Component | Revision |
 | --- | --- |
-| [nim-libp2p-mix #58](https://github.com/logos-co/nim-libp2p-mix/pull/58) | `d4aeff5f032563fc0f9b042a1c8c049d9fa69fba` |
-| [mix-rln-spam-protection-plugin #22](https://github.com/logos-co/mix-rln-spam-protection-plugin/pull/22) | `ac83f368e286c033e72fbd08dc63a4a802cfac0d` |
-| logos-rln-modules `main` ([merged #27](https://github.com/logos-co/logos-rln-modules/pull/27)) | `91ecf7f042b8ffde86e5a1d38c441e988683bf1c` |
-| [logos-delivery #4282](https://github.com/logos-messaging/logos-delivery/pull/4282) | `5becb59bc530435ba02a2c4f4be596f3d93e86c6` |
-| [logos-delivery-module #148](https://github.com/logos-co/logos-delivery-module/pull/148) | `ca1fe40c665b412c5d477020f3c38c33854d5054` |
-| nim-libp2p-mix-ffi `main` (merged #9) | `4e0a21e301506d537207bdb856ec91fe519ccea0` |
-| logos-rln-e2e | `747ad6fd6704645fbb8c70501432c6d236654a78` |
-| logos-lez-rln | `7ea94fc8c42c9a50a49bb291eea17962f88ff0dc` |
+| [nim-libp2p-mix-ffi](https://github.com/logos-co/nim-libp2p-mix-ffi) | `c5ece5fb8e5f1a31724c6f7537d0bdc7d0fd802d` |
+| [logos-rln-modules](https://github.com/logos-co/logos-rln-modules) | `91ecf7f042b8ffde86e5a1d38c441e988683bf1c` |
+| [logos-delivery-module](https://github.com/logos-co/logos-delivery-module) | `7d2e057687c170e93a34f519d682b1d84294b2d1` |
+| [logos-rln-e2e](https://github.com/logos-co/logos-rln-e2e) | `f3ec16e31b00d0d44e2e389236e9e642a34480be` |
+| [logos-lez-rln](https://github.com/logos-co/logos-lez-rln) | `387d9c1f6b353fa3d44cd10e459ec7729d9318a7` |
 
-The Mix module flake pins the first three Mix/RLN revisions and merged FFI
-`main`. Delivery module #148 supersedes the reverted #125, pins the listed
-Delivery #4282 revision, and exports the Delivery, shared RLN, and LEZ registry
-bundles used below. The fixture configures `maxPureLibp2pPeers` to 100 on the
-native Delivery sender and exit so registered Mix peers use normal admission.
+The Mix flake pins the shared RLN revision that supports the FFI adapter wire
+format and exports its RLN and LEZ bundles for the fixture. The FFI and Delivery
+module lock their merged upstream Mix and Delivery changes, so those transitive
+revisions do not need separate entries here. The fixture configures
+`maxPureLibp2pPeers` to 100 on the native Delivery sender and exit so registered
+Mix peers use normal admission.
 
 ## Prerequisites
 
@@ -99,8 +98,8 @@ mkdir -p "$E2E_DEPS_ROOT"
 git clone https://github.com/logos-co/logos-rln-e2e.git "$RLN_E2E_ROOT"
 git clone https://github.com/logos-co/logos-lez-rln.git "$LEZ_RLN_CHECKOUT"
 
-git -C "$RLN_E2E_ROOT" checkout --detach 747ad6fd6704645fbb8c70501432c6d236654a78
-git -C "$LEZ_RLN_CHECKOUT" checkout --detach 7ea94fc8c42c9a50a49bb291eea17962f88ff0dc
+git -C "$RLN_E2E_ROOT" checkout --detach f3ec16e31b00d0d44e2e389236e9e642a34480be
+git -C "$LEZ_RLN_CHECKOUT" checkout --detach 387d9c1f6b353fa3d44cd10e459ec7729d9318a7
 
 # Build the local-chain guest programs and provisioning tools.
 (
@@ -110,12 +109,12 @@ git -C "$LEZ_RLN_CHECKOUT" checkout --detach 7ea94fc8c42c9a50a49bb291eea17962f88
 )
 
 nix build .#lgx --no-write-lock-file --out-link result-mix
+nix build .#liblogos_rln_module-lgx --no-write-lock-file --out-link result-rln
+nix build .#liblogos_lez_rln_module-lgx --no-write-lock-file --out-link result-lez-rln
 
-DELIVERY_MODULE_REV=ca1fe40c665b412c5d477020f3c38c33854d5054
-DELIVERY_FLAKE="github:richard-ramos/logos-delivery-module/$DELIVERY_MODULE_REV"
+DELIVERY_MODULE_REV=7d2e057687c170e93a34f519d682b1d84294b2d1
+DELIVERY_FLAKE="github:logos-co/logos-delivery-module/$DELIVERY_MODULE_REV"
 nix build "${DELIVERY_FLAKE}#lgx" --no-write-lock-file --out-link result-delivery
-nix build "${DELIVERY_FLAKE}#liblogos_rln_module-lgx" --no-write-lock-file --out-link result-rln
-nix build "${DELIVERY_FLAKE}#liblogos_lez_rln_module-lgx" --no-write-lock-file --out-link result-lez-rln
 nix build "${RLN_E2E_ROOT}#logoscore" --no-write-lock-file --out-link result-logoscore
 
 export LOGOSCORE="$MIX_RLN_ROOT/result-logoscore/bin/logoscore"
@@ -132,9 +131,7 @@ The harness owns chain provisioning, daemon logs, and artifact installation.
 The first run may also compile the sequencer. Use the isolated checkout above:
 the harness's local target starts a fresh chain. An already provisioned local
 chain can instead be selected with the harness's external-target environment
-settings. Before registering memberships on a fresh chain, ensure `CLOCK_50`
-has received its first update (block 50 or later). Memberships registered
-against its initial zero timestamp expire when that first update arrives.
+settings.
 
 The assertions require the exact application payload at the recipient and
 metadata reception by all Mix participants. After stopping the standalone
@@ -143,4 +140,6 @@ intermediates, an ordinary Delivery control message must still arrive while
 a working Mix route. The test cover fraction is deliberately low; it is not a
 production privacy setting.
 
-Current execution results are recorded in the repository's `WORK_SUMMARY.md`.
+Last verified on 2026-10-12 with the revisions above: the exact Required
+payload and protected metadata reached their destinations, and stopping all
+standalone intermediates blocked Required traffic while Relay remained usable.

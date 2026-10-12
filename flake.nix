@@ -10,8 +10,8 @@
     liblogos_rln_module.inputs.liblogos_lez_rln_module.inputs.logos-execution-zone.url =
       "github:logos-blockchain/logos-execution-zone/f0778a4316daa4065ff18a77f4f98706149c240e";
 
-    # Pin the standalone facade with default application sending and exit delivery.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/4e0a21e301506d537207bdb856ec91fe519ccea0";
+    # Latest tested standalone facade revision.
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/c5ece5fb8e5f1a31724c6f7537d0bdc7d0fd802d";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -46,5 +46,11 @@
         };
       };
 
-    in module;
+    in module // {
+      packages = builtins.mapAttrs (system: packages: packages // {
+        "liblogos_rln_module-lgx" = inputs.liblogos_rln_module.packages.${system}.lgx;
+        "liblogos_lez_rln_module-lgx" =
+          inputs.liblogos_rln_module.inputs.liblogos_lez_rln_module.packages.${system}.lgx;
+      }) module.packages;
+    };
 }
