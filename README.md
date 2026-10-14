@@ -227,8 +227,12 @@ receivers still send cover packets.
 The module constructor defers node creation until the host
 and backend are available. Loading the module, or setting the configuration
 environment variable, does not replace the explicit `createNode()` call.
-`ok()` confirms the module is loaded; creation errors are returned by
-`createNode()`. It does not report network readiness or active membership.
+`status()` returns a snapshot without waiting for node operations. Its `state`
+is `uninitialized`, `creating`, `created`, `starting`, `running`, `stopping`,
+`stopped`, or `failed`. Creation and startup errors appear in `initError`.
+A failed operation may have timed out; it is not proof that the underlying
+operation has stopped. Lifecycle state does not establish network readiness
+or active membership.
 
 [`config.example.json`](config.example.json) provides the standalone settings.
 Replace its registry placeholder with the real registry ID:
@@ -296,18 +300,36 @@ Discovery or validate a peer's registry membership merely by adding its record.
 
 | Area | Methods |
 | --- | --- |
-| Lifecycle and health | `ok`, `status`, `createNode`, `start`, `stop` |
+| Lifecycle and health | `status`, `createNode`, `start`, `stop` |
 | Introspection | `getNodeInfo`, `getLocalMixPeerRecord`, `addMixPeer`, `listMixPeers` |
 | Membership | `registerRlnMembership`, `hasRlnMembership` |
 | Coordination | `deliverCoordFrame`, `drainCoordBacklog`; `RlnPublishRequested` event |
-| Optional sender | `sendMixMessage`, `sendMixMessageWithSurb`, `sendMixSurbReply` |
-| Optional exit | `mountReceiver`, `drainReceivedMessages`; `IncomingMixMessage` event |
-| Diagnostics | `collectMetrics` currently returns an empty map. |
+| Optional sender | `sendMixMessage`, `sendMixMessageWithSurb`, `reply` |
+| Optional exit | `mountReceiver`; `IncomingMixMessage` event |
 
 `getNodeInfo` accepts `Version`, `PeerId`, `Multiaddrs`, `MixPublicKey`, and
 `RlnMembershipIndex`. Registration delegates to the backend using
 `registrationOptionsJson`; callers must also observe membership activation.
 For the LEZ registry, options can include `[{"key":"rate_limit","value":"100"}]`.
+
+`IncomingMixMessage` carries `{proto, payload, surbs}`. The `surbs` byte array
+is opaque to applications: pass it unchanged to `reply(surbs, payload)` to
+send the same payload over every supplied reply block. It is empty when no
+reply blocks were requested. Nonempty bundles use Mix's count-prefixed SURB
+encoding. Empty, malformed, or trailing-data bundles are rejected before
+sending. A send failure stops the operation; earlier blocks may already have
+been consumed, so do not retry the entire bundle.
+
+Receive messages through events; `drainReceivedMessages()` and its unbounded
+inbox have been removed. The constant `ok()` and empty `collectMetrics()`
+methods have also been removed.
+
+Issue #8 remains partially deferred: the unified asynchronous `send`, reply
+and timeout events, and reply defaults need a settled timeout/default contract.
+The extended status fields (`membership`, `peers`, `ready`, `config`) are not
+yet implemented; membership/introspection methods remain available until their
+replacements and automatic scoped provisioning are verified. Delivery
+coordination remains host-managed pending agreement on shared configuration.
 
 The module uses SDK worker dispatch for its synchronous methods. The host event
 loop remains free to service asynchronous RLN calls; node operations are

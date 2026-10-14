@@ -20,8 +20,6 @@ namespace {
 pthread_once_t g_nim_main_once = PTHREAD_ONCE_INIT;
 void nim_main_thunk() { liblibp2p_mix_rlnNimMain(); }
 
-constexpr char kModuleVersion[] = "0.1.0";
-
 // The callback owns the promise, including after a timeout. A failed submission
 // either invokes it synchronously or leaves ownership with this caller.
 template <class Submit>
@@ -222,22 +220,16 @@ static void onIncomingMixMessage(const IncomingMixMessageEvent* evt, void* ud) {
                       evt->proto.data ? evt->proto.len : 0);
     std::vector<uint8_t> payload(evt->payload.data,
                                  evt->payload.data + evt->payload.len);
-    std::vector<uint8_t> surb;
-    if (evt->surb.data && evt->surb.len > 0) {
-        surb.assign(evt->surb.data, evt->surb.data + evt->surb.len);
+    std::vector<uint8_t> surbs;
+    if (evt->surbs.data && evt->surbs.len > 0) {
+        surbs.assign(evt->surbs.data, evt->surbs.data + evt->surbs.len);
     }
     // Push-style: fire the host callback if one is registered.
     hostEmit(self, "IncomingMixMessage", {
         {"proto",   proto},
         {"payload", payload},
-        {"surb",    surb},
+        {"surbs",   surbs},
     });
-    // Pull-style: buffer for `drainReceivedMessages` (used by shell-driven
-    // orchestration that can't subscribe to events).
-    {
-        std::lock_guard<std::mutex> lk(self->m_backlogMutex);
-        self->m_inbox.push_back({std::move(proto), std::move(payload), std::move(surb)});
-    }
 }
 
 static void onRlnModuleRequest(const RlnModuleRequestEvent* event, void* ud) {
@@ -292,16 +284,20 @@ Libp2pMixRlnModuleImpl::~Libp2pMixRlnModuleImpl() {
     }
 }
 
-bool Libp2pMixRlnModuleImpl::ok() { return true; }
-
 StdLogosResult Libp2pMixRlnModuleImpl::status() {
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    json j = {
-        {"version", kModuleVersion},
-        {"state",   m_ctx ? "created" : "uninitialized"},
-    };
-    return {true, j, ""};
+    std::lock_guard<std::mutex> lk(m_statusMutex);
+    return {true, m_status, ""};
 }
+
+namespace {
+void setLifecycleStatus(Libp2pMixRlnModuleImpl* self, const char* state,
+                        const std::string& error = "") {
+    std::lock_guard<std::mutex> lk(self->m_statusMutex);
+    self->m_status["state"] = state;
+    if (error.empty()) self->m_status.erase("initError");
+    else self->m_status["initError"] = error;
+}
+} // namespace
 
 StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson) {
     std::lock_guard<std::mutex> lk(m_callMutex);
@@ -310,9 +306,15 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
         bool ok = false;
         std::string err;
         auto opts = Libp2pMixRlnModuleOptions::fromJson(configJson, ok, &err);
-        if (!ok) return {false, {}, "invalid config: " + err};
+        if (!ok) {
+            std::lock_guard<std::mutex> statusLock(m_statusMutex);
+            m_status["initError"] = "invalid config: " + err;
+            return {false, {}, "invalid config: " + err};
+        }
         m_options = std::move(opts);
     }
+
+    setLifecycleStatus(this, "creating");
 
     // Tear down any prior node before rebuilding.
     if (m_ctx) {
@@ -324,14 +326,16 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
     {
         std::lock_guard<std::mutex> backlogLock(m_backlogMutex);
         m_coordBacklog.clear();
-        m_inbox.clear();
     }
 
     FfiConfigBundle bundle(m_options);
     auto r = submitAndWait("createNode", kCreateTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_create(&bundle.cfg, cbCreate, p);
     });
-    if (!r.ok) return {false, {}, r.message};
+    if (!r.ok) {
+        setLifecycleStatus(this, "failed", r.message);
+        return {false, {}, r.message};
+    }
     m_ctx = r.newCtx;
 
     // Register event listeners now that we have a ctx. Passing `this` as ud so
@@ -340,30 +344,16 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
     if (!m_rlnBridge.attach(m_ctx)) {
         libp2p_mix_rln_ctx_destroy(m_ctx);
         m_ctx = nullptr;
+        setLifecycleStatus(this, "failed", "RLN module transport unavailable");
         return {false, {}, "RLN module transport unavailable"};
     }
     libp2p_mix_rln_ctx_add_on_rln_module_request_listener(m_ctx, onRlnModuleRequest, this);
 
     libp2p_mix_rln_ctx_add_on_rln_publish_requested_listener(m_ctx, onRlnPublishRequested, this);
 
+    setLifecycleStatus(this, "created");
     return {true, json{{"created", true}}, ""};
 }
-
-// ---------------------------------------------------------------------------
-// Generic call helpers
-// ---------------------------------------------------------------------------
-
-namespace {
-// Common submit / await / translate dance for ops that take no args and
-// return a bool (start, stop).
-template <class Submit>
-StdLogosResult submitBool(LibMixRlnCtx* ctx, const char* errPrefix, int timeoutMs, Submit&& submit) {
-    if (!ctx) return {false, {}, std::string(errPrefix) + ": node not created"};
-    auto r = submitAndWait(errPrefix, timeoutMs, submit);
-    if (!r.ok) return {false, {}, r.message};
-    return {true, nlohmann::json{{"ok", r.boolValue}}, ""};
-}
-} // namespace
 
 // ---------------------------------------------------------------------------
 // Ops
@@ -371,16 +361,26 @@ StdLogosResult submitBool(LibMixRlnCtx* ctx, const char* errPrefix, int timeoutM
 
 StdLogosResult Libp2pMixRlnModuleImpl::start() {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitBool(m_ctx, "start", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+    if (!m_ctx) return {false, {}, "start: node not created"};
+    setLifecycleStatus(this, "starting");
+    auto r = submitAndWait("start", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_start(m_ctx, cbBool, p);
     });
+    setLifecycleStatus(this, r.ok && r.boolValue ? "running" : "failed", r.message);
+    if (!r.ok) return {false, {}, r.message};
+    return {true, json{{"ok", r.boolValue}}, ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::stop() {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitBool(m_ctx, "stop", kStopTimeoutMs, [&](std::promise<SyncResult>* p) {
+    if (!m_ctx) return {false, {}, "stop: node not created"};
+    setLifecycleStatus(this, "stopping");
+    auto r = submitAndWait("stop", kStopTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_stop(m_ctx, cbBool, p);
     });
+    setLifecycleStatus(this, r.ok && r.boolValue ? "stopped" : "failed", r.message);
+    if (!r.ok) return {false, {}, r.message};
+    return {true, json{{"ok", r.boolValue}}, ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::getNodeInfo(const std::string& field) {
@@ -465,16 +465,16 @@ StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageWithSurb(const std::string&
                          /*expectReply=*/true);
 }
 
-StdLogosResult Libp2pMixRlnModuleImpl::sendMixSurbReply(const std::vector<uint8_t>& surb,
-                                                        const std::vector<uint8_t>& payload) {
+StdLogosResult Libp2pMixRlnModuleImpl::reply(const std::vector<uint8_t>& surbs,
+                                          const std::vector<uint8_t>& payload) {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    if (!m_ctx) return {false, {}, "sendMixSurbReply: node not created"};
+    if (!m_ctx) return {false, {}, "reply: node not created"};
     MixSurbReplyRequest req{};
-    req.surb.data    = const_cast<uint8_t*>(surb.data());
-    req.surb.len     = surb.size();
+    req.surbs.data   = const_cast<uint8_t*>(surbs.data());
+    req.surbs.len    = surbs.size();
     req.payload.data = const_cast<uint8_t*>(payload.data());
     req.payload.len  = payload.size();
-    auto r = submitAndWait("sendMixSurbReply", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+    auto r = submitAndWait("reply", kDefaultOpTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_send_mix_surb_reply(m_ctx, &req, cbBool, p);
     });
     if (!r.ok) return {false, {}, r.message};
@@ -654,28 +654,4 @@ StdLogosResult Libp2pMixRlnModuleImpl::drainCoordBacklog() {
         });
     }
     return {true, arr, ""};
-}
-
-StdLogosResult Libp2pMixRlnModuleImpl::drainReceivedMessages() {
-    std::vector<InboxEntry> drained;
-    {
-        std::lock_guard<std::mutex> lk(m_backlogMutex);
-        drained.swap(m_inbox);
-    }
-    nlohmann::json arr = nlohmann::json::array();
-    for (const auto& e : drained) {
-        arr.push_back({
-            {"proto",      e.proto},
-            {"payloadHex", hexEncodeBytes(e.payload.data(), e.payload.size())},
-            {"surbHex",    hexEncodeBytes(e.surb.data(), e.surb.size())},
-        });
-    }
-    return {true, arr, ""};
-}
-
-LogosMap Libp2pMixRlnModuleImpl::collectMetrics() {
-    // Nim side doesn't emit metrics through the FFI yet. When it does, this
-    // will call a `libp2p_mix_rln_ctx_collect_metrics` and translate the
-    // Prometheus-shape JSON into a LogosMap of counters.
-    return {};
 }

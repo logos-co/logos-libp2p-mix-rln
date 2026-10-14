@@ -11,7 +11,7 @@
       "github:logos-blockchain/logos-execution-zone/f0778a4316daa4065ff18a77f4f98706149c240e";
 
     # Latest tested standalone facade revision.
-    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/c5ece5fb8e5f1a31724c6f7537d0bdc7d0fd802d";
+    libp2p-mix-rln.url = "github:logos-co/nim-libp2p-mix-ffi/5e0fe45b8b335f0d2126639b4ba90a1df4b59cfe";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:

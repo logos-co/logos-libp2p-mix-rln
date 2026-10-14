@@ -19,7 +19,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include "logos_json.h"
 #include "logos_result.h"
 
 // The nim-ffi generated header is header-only C: it declares the exported Nim
@@ -61,12 +60,11 @@ public:
 
     // Set by the codegen glue after construction so the impl can push events.
     // Known event names:
-    //   "IncomingMixMessage" — {proto, payload: byte[], surb: byte[]}
+    //   "IncomingMixMessage" — {proto, payload: byte[], surbs: byte[]}
     //   "RlnPublishRequested" — {contentTopic, payload: byte[]}
     std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
     // Health / status ------------------------------------------------------
-    bool ok();
     StdLogosResult status();
 
     // Node lifecycle -------------------------------------------------------
@@ -97,8 +95,9 @@ public:
                                           const std::string& proto,
                                           const std::vector<uint8_t>& payload);
 
-    StdLogosResult sendMixSurbReply(const std::vector<uint8_t>& surb,
-                                    const std::vector<uint8_t>& payload);
+    // Consumes the opaque incoming bundle; a failure may follow partial delivery.
+    StdLogosResult reply(const std::vector<uint8_t>& surbs,
+                         const std::vector<uint8_t>& payload);
 
     // Peer record includes peerId, multiaddrs, mixPubKeyHex, and libp2pPubKeyHex.
     StdLogosResult getLocalMixPeerRecord();
@@ -110,21 +109,11 @@ public:
     // `logoscore call` CLI knows how to marshal.
     StdLogosResult addMixPeer(const std::string& recordJson);
 
-    // Mounts a protocol on `codec`; length-prefixed
-    // bytes (up to `maxSize`) are queued into an inbox, drainable via
-    // `drainReceivedMessages`. Pairs with `sendMixMessage`.
+    // Emits IncomingMixMessage for length-prefixed messages up to maxSize.
     StdLogosResult mountReceiver(const std::string& codec, int64_t maxSize);
-
-    // Returns and clears the accumulated `IncomingMixMessage` payloads for
-    // any codec mounted via `mountReceiver`, as a JSON array of
-    // {proto, payloadHex, surbHex}. Empty array when nothing pending.
-    StdLogosResult drainReceivedMessages();
 
     // Mix-node inventory ---------------------------------------------------
     StdLogosResult listMixPeers();
-
-    // Diagnostics ----------------------------------------------------------
-    LogosMap collectMetrics();
 
     // ------------------------------------------------------------------
     // Members below are for plugin.cpp's internal helpers. Kept public so
@@ -140,16 +129,12 @@ public:
     // Serialize node operations against replacement and teardown.
     std::mutex m_callMutex;
 
-    // Incoming-message events fire from the nim-ffi dispatch thread; the
-    // drain method runs on the caller thread. Guarded separately so the
-    // guarded regions don't nest with m_callMutex.
-    struct InboxEntry {
-        std::string proto;
-        std::vector<uint8_t> payload;
-        std::vector<uint8_t> surb;
-    };
+    // status() never waits for FFI operations holding m_callMutex.
+    std::mutex m_statusMutex;
+    nlohmann::json m_status = {{"version", "0.1.0"}, {"state", "uninitialized"}};
+
+    // Coordination callbacks and drainCoordBacklog run on separate threads.
     std::mutex m_backlogMutex;
-    std::vector<InboxEntry>        m_inbox;
     struct CoordBacklogEntry {
         std::string contentTopic;
         std::vector<uint8_t> payload;
