@@ -131,7 +131,7 @@ public:
 
     // status() never waits for FFI operations holding m_callMutex.
     std::mutex m_statusMutex;
-    nlohmann::json m_status = {{"version", "0.1.0"}, {"state", "uninitialized"}};
+    nlohmann::json m_status;
 
     // Coordination callbacks and drainCoordBacklog run on separate threads.
     std::mutex m_backlogMutex;

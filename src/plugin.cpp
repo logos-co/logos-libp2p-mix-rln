@@ -20,6 +20,8 @@ namespace {
 pthread_once_t g_nim_main_once = PTHREAD_ONCE_INIT;
 void nim_main_thunk() { liblibp2p_mix_rlnNimMain(); }
 
+constexpr char kModuleVersion[] = "0.1.0";
+
 // The callback owns the promise, including after a timeout. A failed submission
 // either invokes it synchronously or leaves ownership with this caller.
 template <class Submit>
@@ -270,7 +272,8 @@ static void onRlnPublishRequested(const RlnPublishRequestedEvent* evt, void* ud)
 // ---------------------------------------------------------------------------
 
 Libp2pMixRlnModuleImpl::Libp2pMixRlnModuleImpl(const Libp2pMixRlnModuleOptions& options)
-    : m_options(options) {
+    : m_options(options),
+      m_status{{"version", kModuleVersion}, {"state", "uninitialized"}} {
     ensureNimMain();
 }
 
