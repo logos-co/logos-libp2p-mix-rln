@@ -379,7 +379,7 @@ Before advertising the node, verify all of the following:
 
 - `libp2p_mix_rln_module.status()` reports a created node with no
   initialization error.
-- `hasRlnMembership()` reports an active usable Mix membership.
+- `status().membership.state` reports an active usable Mix membership after its asynchronous refresh completes.
 - The backend lists active Relay and Mix membership hashes.
 - Delivery is connected to its Relay peers and subscribed to the metadata
   topic.

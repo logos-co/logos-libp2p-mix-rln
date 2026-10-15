@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -25,6 +26,8 @@ struct MixOptions {
     std::vector<uint8_t> mixPrivKey = {};
     // Cover-traffic rate ratio (LIP LOGOS-MIXNET: 0.7).
     double coverRateFraction = 0.7;
+    // Zero means unspecified; sends requesting replies require an explicit timeout.
+    int64_t replyTimeoutMs = 0;
 };
 
 struct RlnOptions {
@@ -102,6 +105,15 @@ inline void applyMix(const nlohmann::json& j, MixOptions& m) {
     if (auto it = j.find("mixPrivKey"); it != j.end()) {
         if (!it->is_string()) throw std::invalid_argument("mix.mixPrivKey must be a string");
         m.mixPrivKey = decodeHex(it->get<std::string>());
+    }
+    if (auto it = j.find("reply"); it != j.end()) {
+        if (!it->is_object()) throw std::invalid_argument("mix.reply must be an object");
+        if (auto timeout = it->find("timeoutMs"); timeout != it->end()) {
+            if (!timeout->is_number_integer() || *timeout <= 0 ||
+                *timeout > std::numeric_limits<int64_t>::max() / 1000000)
+                throw std::invalid_argument("mix.reply.timeoutMs must be a positive representable duration");
+            m.replyTimeoutMs = timeout->get<int64_t>();
+        }
     }
     if (auto it = j.find("cover"); it != j.end()) {
         if (!it->is_object()) throw std::invalid_argument("mix.cover must be an object");

@@ -110,4 +110,25 @@ LOGOS_TEST(shared_rln_scope_is_explicit_and_legacy_settings_fail) {
     }
 }
 
+LOGOS_TEST(reply_timeout_requires_an_explicit_positive_integer) {
+    bool ok = false;
+    auto defaults = Libp2pMixRlnModuleOptions::fromJson("{}", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    LOGOS_ASSERT_EQ(defaults.mix.replyTimeoutMs, int64_t(0));
+    auto configured = Libp2pMixRlnModuleOptions::fromJson(
+        R"({"mix":{"reply":{"timeoutMs":2500}}})", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    LOGOS_ASSERT_EQ(configured.mix.replyTimeoutMs, int64_t(2500));
+    for (const auto& timeout : {json(0), json(-1), json(1.5), json("100"),
+                               json(true), json(nullptr), json(uint64_t(-1))}) {
+        auto raw = json{{"mix", {{"reply", {{"timeoutMs", timeout}}}}}}.dump();
+        std::string error;
+        Libp2pMixRlnModuleOptions::fromJson(raw, ok, &error);
+        LOGOS_ASSERT_FALSE(ok);
+        LOGOS_ASSERT_TRUE(error.find("mix.reply.timeoutMs") != std::string::npos);
+    }
+    Libp2pMixRlnModuleOptions::fromJson(R"({"mix":{"reply":[]}})", ok);
+    LOGOS_ASSERT_FALSE(ok);
+}
+
 LOGOS_TEST_MAIN()

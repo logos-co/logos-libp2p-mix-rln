@@ -27,6 +27,9 @@
             "maxConnsPerPeer": "int — default 2, allowing simultaneous inbound/outbound dials",
 
             "mix": {
+                "reply": {
+                    "timeoutMs": "integer — explicit positive per-reply read timeout; required when send requests SURBs"
+                },
                 "mixPrivKey": "string — hex-encoded X25519 private key advertised for Sphinx path selection. Omit to generate on start.",
                 "cover": {
                     "rateFraction": "float — CONSTANT_RATE cover-traffic ratio. LIP LOGOS-MIXNET default: 0.7."
