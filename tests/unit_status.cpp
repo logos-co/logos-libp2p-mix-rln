@@ -38,4 +38,28 @@ LOGOS_TEST(status_reports_ffi_creation_failure) {
     LOGOS_ASSERT_EQ(result.value.at("initError").get<std::string>(), creation.error);
 }
 
+LOGOS_TEST(status_exposes_public_config_without_key_material) {
+    bool ok = false;
+    auto opts = Libp2pMixRlnModuleOptions::fromJson(R"({
+        "privKey":"cafebabe", "transport":"quic", "maxConnections":17,
+        "mix":{"mixPrivKey":"deadbeef", "cover":{"rateFraction":0.2},
+               "reply":{"timeoutMs":2500}},
+        "rln":{"registryId":"test", "registrationOptionsJson":"private options"}
+    })", ok);
+    LOGOS_ASSERT_TRUE(ok);
+    Libp2pMixRlnModuleImpl module{opts};
+    auto snapshot = module.status().value;
+    auto config = snapshot.at("config");
+    LOGOS_ASSERT_TRUE(snapshot.at("membership").is_null());
+    LOGOS_ASSERT_EQ(snapshot.at("version").get<std::string>(), "0.1.0");
+    LOGOS_ASSERT_EQ(config.at("transport").get<std::string>(), "quic");
+    LOGOS_ASSERT_EQ(config.at("maxConnections").get<int>(), 17);
+    LOGOS_ASSERT_EQ(config.at("mix").at("reply").at("timeoutMs").get<int>(), 2500);
+    LOGOS_ASSERT_FALSE(config.contains("privKey"));
+    LOGOS_ASSERT_FALSE(config.at("mix").contains("mixPrivKey"));
+    LOGOS_ASSERT_FALSE(config.at("rln").contains("registrationOptionsJson"));
+    LOGOS_ASSERT_FALSE(module.createNode("{").success);
+    LOGOS_ASSERT_EQ(module.status().value.at("config"), config);
+}
+
 LOGOS_TEST_MAIN()

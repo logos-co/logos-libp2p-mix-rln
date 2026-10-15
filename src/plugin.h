@@ -45,7 +45,6 @@ struct SyncResult {
     bool ok = false;
     std::string message;
     // Optional carriers for typed reply data. Each op consumes at most one.
-    std::string strValue;
     int64_t     intValue = 0;
     bool        boolValue = false;
     LibMixRlnCtx* newCtx = nullptr;
@@ -61,6 +60,7 @@ public:
     // Set by the codegen glue after construction so the impl can push events.
     // Known event names:
     //   "IncomingMixMessage" — {proto, payload: byte[], surbs: byte[]}
+    //   "MixReplyReceived" — {messageId, payload: byte[]}
     //   "RlnPublishRequested" — {contentTopic, payload: byte[]}
     std::function<void(const std::string& eventName, const std::string& data)> emitEvent;
 
@@ -72,13 +72,8 @@ public:
     StdLogosResult start();
     StdLogosResult stop();
 
-    // Node introspection ---------------------------------------------------
-    // field ∈ { "Version", "PeerId", "Multiaddrs", "MixPublicKey", "RlnMembershipIndex" }
-    StdLogosResult getNodeInfo(const std::string& field);
-
     // RLN membership -------------------------------------------------------
     StdLogosResult registerRlnMembership();
-    StdLogosResult hasRlnMembership();
 
     // Transport these frames through an external Relay-capable Delivery module.
     // Use either the publish event or the pull backlog for outbound delivery.
@@ -87,13 +82,9 @@ public:
 
     // Logos supports exit == destination only; the destination must run a
     // receiver mounted for `proto`.
-    StdLogosResult sendMixMessage(const std::string& destPeerId,
-                                  const std::string& proto,
-                                  const std::vector<uint8_t>& payload);
-
-    StdLogosResult sendMixMessageWithSurb(const std::string& destPeerId,
-                                          const std::string& proto,
-                                          const std::vector<uint8_t>& payload);
+    // numSurbs is required until the default policy is settled.
+    StdLogosResult send(const std::string& destPeerId, const std::string& proto,
+                        const std::vector<uint8_t>& payload, int64_t numSurbs);
 
     // Consumes the opaque incoming bundle; a failure may follow partial delivery.
     StdLogosResult reply(const std::vector<uint8_t>& surbs,

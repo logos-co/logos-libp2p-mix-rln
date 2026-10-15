@@ -148,15 +148,6 @@ static void cbBool(int ec, const bool* reply, const char* em, void* ud) {
     finish(p, std::move(r));
 }
 
-static void cbNodeInfo(int ec, const NodeInfoResponse* reply, const char* em, void* ud) {
-    auto* p = static_cast<std::promise<SyncResult>*>(ud);
-    SyncResult r = baseReply(ec, em);
-    if (r.ok && reply && reply->value.data) {
-        r.strValue.assign(reply->value.data, reply->value.len);
-    }
-    finish(p, std::move(r));
-}
-
 static void cbMembership(int ec, const RlnMembershipStatus* reply, const char* em, void* ud) {
     auto* p = static_cast<std::promise<SyncResult>*>(ud);
     SyncResult r = baseReply(ec, em);
@@ -171,12 +162,7 @@ static void cbMixSend(int ec, const MixSendResponse* reply, const char* em, void
     auto* p = static_cast<std::promise<SyncResult>*>(ud);
     SyncResult r = baseReply(ec, em);
     if (r.ok && reply) {
-        std::vector<uint8_t> replyBytes;
-        if (reply->reply.data && reply->reply.len > 0) {
-            replyBytes.assign(reply->reply.data, reply->reply.data + reply->reply.len);
-        }
-        r.boolValue = reply->ok;
-        r.jsonValue = {{"ok", reply->ok}, {"reply", std::move(replyBytes)}};
+        r.jsonValue = {{"messageId", std::string(reply->messageId.data, reply->messageId.len)}};
     }
     finish(p, std::move(r));
 }
@@ -234,6 +220,34 @@ static void onIncomingMixMessage(const IncomingMixMessageEvent* evt, void* ud) {
     });
 }
 
+static void onMixReplyReceived(const MixReplyReceivedEvent* evt, void* ud) {
+    auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
+    if (!evt || !self) return;
+    std::vector<uint8_t> payload;
+    if (evt->payload.len > 0)
+        payload.assign(evt->payload.data, evt->payload.data + evt->payload.len);
+    hostEmit(self, "MixReplyReceived", {
+        {"messageId", std::string(evt->messageId.data, evt->messageId.len)},
+        {"payload", payload},
+    });
+}
+
+static void onRlnMembership(const RlnMembershipEvent* evt, void* ud) {
+    auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
+    if (!evt || !self) return;
+    std::lock_guard<std::mutex> lk(self->m_statusMutex);
+    if (evt->error.len > 0) {
+        self->m_status["membership"] = nullptr;
+        self->m_status["membershipError"] = std::string(evt->error.data, evt->error.len);
+    } else {
+        self->m_status["membership"] = json::parse(
+            std::string(evt->stateJson.data, evt->stateJson.len));
+        self->m_status.erase("membershipError");
+    }
+}
+
+static void membershipRefreshSubmitted(int, const bool*, const char*, void*) {}
+
 static void onRlnModuleRequest(const RlnModuleRequestEvent* event, void* ud) {
     auto* self = static_cast<Libp2pMixRlnModuleImpl*>(ud);
     if (!self || !event) return;
@@ -267,13 +281,37 @@ static void onRlnPublishRequested(const RlnPublishRequestedEvent* evt, void* ud)
 } // namespace  (closes the file-scope anonymous namespace opened above the
   // FfiConfigBundle / cb* / on* helpers)
 
+namespace {
+json publicConfig(const Libp2pMixRlnModuleOptions& opts) {
+    json config = {
+        {"addrs", opts.addrs},
+        {"transport", opts.transport == TransportKind::Quic ? "quic" : "tcp"},
+        {"maxConnections", opts.maxConnections},
+        {"maxConnsPerPeer", opts.maxConnsPerPeer},
+        {"mix", {{"cover", {{"rateFraction", opts.mix.coverRateFraction}}}}},
+        {"rln", {
+            {"registryId", opts.rln.registryId},
+            {"rlnIdentifierHex", opts.rln.rlnIdentifierHex},
+            {"epochDurationSeconds", opts.rln.epochDurationSeconds},
+            {"maxEpochGap", opts.rln.maxEpochGap},
+            {"userMessageLimit", opts.rln.userMessageLimit},
+            {"proofMetadataContentTopic", opts.rln.proofMetadataContentTopic},
+        }},
+    };
+    if (opts.mix.replyTimeoutMs > 0)
+        config["mix"]["reply"]["timeoutMs"] = opts.mix.replyTimeoutMs;
+    return config;
+}
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
 Libp2pMixRlnModuleImpl::Libp2pMixRlnModuleImpl(const Libp2pMixRlnModuleOptions& options)
     : m_options(options),
-      m_status{{"version", kModuleVersion}, {"state", "uninitialized"}} {
+      m_status{{"version", kModuleVersion}, {"state", "uninitialized"},
+               {"membership", nullptr}, {"config", publicConfig(options)}} {
     ensureNimMain();
 }
 
@@ -288,6 +326,10 @@ Libp2pMixRlnModuleImpl::~Libp2pMixRlnModuleImpl() {
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::status() {
+    // Skip refresh while a lifecycle operation owns the context; never wait for it.
+    std::unique_lock<std::mutex> operation(m_callMutex, std::try_to_lock);
+    if (operation.owns_lock() && m_ctx)
+        libp2p_mix_rln_ctx_refresh_membership(m_ctx, membershipRefreshSubmitted, nullptr);
     std::lock_guard<std::mutex> lk(m_statusMutex);
     return {true, m_status, ""};
 }
@@ -331,6 +373,12 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
         m_coordBacklog.clear();
     }
 
+    {
+        std::lock_guard<std::mutex> statusLock(m_statusMutex);
+        m_status["membership"] = nullptr;
+        m_status.erase("membershipError");
+        m_status["config"] = publicConfig(m_options);
+    }
     FfiConfigBundle bundle(m_options);
     auto r = submitAndWait("createNode", kCreateTimeoutMs, [&](std::promise<SyncResult>* p) {
         return libp2p_mix_rln_ctx_create(&bundle.cfg, cbCreate, p);
@@ -344,6 +392,8 @@ StdLogosResult Libp2pMixRlnModuleImpl::createNode(const std::string& configJson)
     // Register event listeners now that we have a ctx. Passing `this` as ud so
     // event trampolines can find us.
     libp2p_mix_rln_ctx_add_on_incoming_mix_message_listener(m_ctx, onIncomingMixMessage, this);
+    libp2p_mix_rln_ctx_add_on_mix_reply_received_listener(m_ctx, onMixReplyReceived, this);
+    libp2p_mix_rln_ctx_add_on_rln_membership_listener(m_ctx, onRlnMembership, this);
     if (!m_rlnBridge.attach(m_ctx)) {
         libp2p_mix_rln_ctx_destroy(m_ctx);
         m_ctx = nullptr;
@@ -386,25 +436,6 @@ StdLogosResult Libp2pMixRlnModuleImpl::stop() {
     return {true, json{{"ok", r.boolValue}}, ""};
 }
 
-StdLogosResult Libp2pMixRlnModuleImpl::getNodeInfo(const std::string& field) {
-    NodeInfoField fld;
-    if      (field == "Version")            fld = NODE_INFO_FIELD_NIF_VERSION;
-    else if (field == "PeerId")             fld = NODE_INFO_FIELD_NIF_PEER_ID;
-    else if (field == "Multiaddrs")         fld = NODE_INFO_FIELD_NIF_MULTIADDRS;
-    else if (field == "MixPublicKey")       fld = NODE_INFO_FIELD_NIF_MIX_PUBLIC_KEY;
-    else if (field == "RlnMembershipIndex") fld = NODE_INFO_FIELD_NIF_RLN_MEMBERSHIP_INDEX;
-    else return {false, {}, "unknown field: " + field};
-
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    if (!m_ctx) return {false, {}, "getNodeInfo: node not created"};
-    NodeInfoRequest req{fld};
-    auto r = submitAndWait("getNodeInfo", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
-        return libp2p_mix_rln_ctx_get_node_info(m_ctx, &req, cbNodeInfo, p);
-    });
-    if (!r.ok) return {false, {}, r.message};
-    return {true, r.strValue, ""};
-}
-
 // RLN --------------------------------------------------------------------
 
 StdLogosResult Libp2pMixRlnModuleImpl::registerRlnMembership() {
@@ -417,55 +448,25 @@ StdLogosResult Libp2pMixRlnModuleImpl::registerRlnMembership() {
     return {true, json{{"registered", r.boolValue}, {"index", r.intValue}}, ""};
 }
 
-StdLogosResult Libp2pMixRlnModuleImpl::hasRlnMembership() {
+StdLogosResult Libp2pMixRlnModuleImpl::send(
+    const std::string& destPeerId, const std::string& proto,
+    const std::vector<uint8_t>& payload, int64_t numSurbs) {
     std::lock_guard<std::mutex> lk(m_callMutex);
-    if (!m_ctx) return {false, {}, "hasRlnMembership: node not created"};
-    auto r = submitAndWait("hasRlnMembership", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
-        return libp2p_mix_rln_ctx_has_rln_membership(m_ctx, cbMembership, p);
-    });
-    if (!r.ok) return {false, {}, r.message};
-    return {true, json{{"registered", r.boolValue}, {"index", r.intValue}}, ""};
-}
-
-// Mix send ---------------------------------------------------------------
-
-// submitMixSend is a file-scope static so it can call cbMixSend directly.
-static StdLogosResult submitMixSend(LibMixRlnCtx* ctx,
-                                    const std::string& destPeerId,
-                                    const std::string& proto,
-                                    const std::vector<uint8_t>& payload,
-                                    bool expectReply) {
-    if (!ctx) return {false, {}, "sendMixMessage: node not created"};
+    if (!m_ctx) return {false, {}, "send: node not created"};
+    if (numSurbs > 0 && m_options.mix.replyTimeoutMs == 0)
+        return {false, {}, "send: configure mix.reply.timeoutMs when requesting replies"};
     MixSendRequest req{};
-    req.destPeerId    = borrowStr(destPeerId);
-    req.proto         = borrowStr(proto);
-    req.payload.data  = const_cast<uint8_t*>(payload.data());
-    req.payload.len   = payload.size();
-    req.expectReply   = expectReply;
-    req.numSurbs      = expectReply ? 1 : 0;
-    req.timeoutMs     = kDefaultOpTimeoutMs;
-
-    auto r = submitAndWait("sendMixMessage", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
-        return libp2p_mix_rln_ctx_send_mix_message(ctx, &req, cbMixSend, p);
+    req.destPeerId = borrowStr(destPeerId);
+    req.proto = borrowStr(proto);
+    req.payload.data = const_cast<uint8_t*>(payload.data());
+    req.payload.len = payload.size();
+    req.numSurbs = numSurbs;
+    req.timeoutMs = m_options.mix.replyTimeoutMs;
+    auto r = submitAndWait("send", kRlnOpTimeoutMs, [&](std::promise<SyncResult>* p) {
+        return libp2p_mix_rln_ctx_send_mix_message(m_ctx, &req, cbMixSend, p);
     });
     if (!r.ok) return {false, {}, r.message};
-    return {true, std::move(r.jsonValue), ""};
-}
-
-StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessage(const std::string& destPeerId,
-                                                      const std::string& proto,
-                                                      const std::vector<uint8_t>& payload) {
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, proto, payload,
-                         /*expectReply=*/false);
-}
-
-StdLogosResult Libp2pMixRlnModuleImpl::sendMixMessageWithSurb(const std::string& destPeerId,
-                                                              const std::string& proto,
-                                                              const std::vector<uint8_t>& payload) {
-    std::lock_guard<std::mutex> lk(m_callMutex);
-    return submitMixSend(m_ctx, destPeerId, proto, payload,
-                         /*expectReply=*/true);
+    return {true, r.jsonValue, ""};
 }
 
 StdLogosResult Libp2pMixRlnModuleImpl::reply(const std::vector<uint8_t>& surbs,

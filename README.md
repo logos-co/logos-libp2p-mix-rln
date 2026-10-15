@@ -301,16 +301,43 @@ Discovery or validate a peer's registry membership merely by adding its record.
 | Area | Methods |
 | --- | --- |
 | Lifecycle and health | `status`, `createNode`, `start`, `stop` |
-| Introspection | `getNodeInfo`, `getLocalMixPeerRecord`, `addMixPeer`, `listMixPeers` |
-| Membership | `registerRlnMembership`, `hasRlnMembership` |
+| Introspection | `getLocalMixPeerRecord`, `addMixPeer`, `listMixPeers` |
+| Membership | `registerRlnMembership`; backend state in `status().membership` |
 | Coordination | `deliverCoordFrame`, `drainCoordBacklog`; `RlnPublishRequested` event |
-| Optional sender | `sendMixMessage`, `sendMixMessageWithSurb`, `reply` |
+| Optional sender | `send(destPeerId, proto, payload, numSurbs)`, `reply`; `MixReplyReceived` event |
 | Optional exit | `mountReceiver`; `IncomingMixMessage` event |
 
-`getNodeInfo` accepts `Version`, `PeerId`, `Multiaddrs`, `MixPublicKey`, and
-`RlnMembershipIndex`. Registration delegates to the backend using
-`registrationOptionsJson`; callers must also observe membership activation.
-For the LEZ registry, options can include `[{"key":"rate_limit","value":"100"}]`.
+`send` returns `{messageId}` after transmission; it does not wait for replies.
+Each reply produces `MixReplyReceived {messageId, payload}` without requiring
+`mountReceiver` on the sender. Events may arrive before the send call returns;
+correlate by message ID. `numSurbs` is required: zero disables replies. When it
+is positive, configure an explicit positive integer `mix.reply.timeoutMs`.
+There is no new default SURB count or timeout. The configured timeout retains
+the existing per-reply read timeout, bounded by native SURB credential expiry;
+a total-send deadline and `MixReplyTimedOut` policy remain undecided.
+Pending reads and credentials are released on completion, timeout, or stop.
+
+`status().membership` contains the last complete `get_membership_state` backend
+response, including its state, optional `leaf_index`, and provisioning progress.
+It is null before an observation or after a refresh failure; `membershipError`
+explains a failure. Calls to `status()` request an asynchronous refresh when no
+node operation is in progress, and return the cached snapshot immediately.
+Repeated refreshes coalesce. Poll again to observe completion; this is not a
+synchronous membership check or a readiness guarantee.
+
+`status().config` contains parsed public settings, including the cover fraction
+and any explicit reply timeout. It omits host/Mix private keys and arbitrary
+registration options. Bound addresses remain in `getLocalMixPeerRecord()`.
+`getNodeInfo()` and `hasRlnMembership()` are removed in favor of these snapshots
+and the peer record.
+
+Registration still delegates to the backend using `registrationOptionsJson`;
+callers must observe activation. The pinned backend automatically provisions a
+registry-wide membership, but skips provisioning if any live membership already
+exists for that registry, including one dedicated to Relay. It does not ensure
+the separate Mix scope used by this deployment, so `registerRlnMembership()`
+remains available. For LEZ, registration options can include
+`[{"key":"rate_limit","value":"100"}]`.
 
 `IncomingMixMessage` carries `{proto, payload, surbs}`. The `surbs` byte array
 is opaque to applications: pass it unchanged to `reply(surbs, payload)` to
@@ -324,12 +351,9 @@ Receive messages through events; `drainReceivedMessages()` and its unbounded
 inbox have been removed. The constant `ok()` and empty `collectMetrics()`
 methods have also been removed.
 
-Issue #8 remains partially deferred: the unified asynchronous `send`, reply
-and timeout events, and reply defaults need a settled timeout/default contract.
-The extended status fields (`membership`, `peers`, `ready`, `config`) are not
-yet implemented; membership/introspection methods remain available until their
-replacements and automatic scoped provisioning are verified. Delivery
-coordination remains host-managed pending agreement on shared configuration.
+Issue #8 remains partially deferred: default SURB count/timeout, total timeout
+and timeout-event semantics, the `status().peers`/`ready` contracts, and internal
+Delivery coordination ownership. No default policies are inferred here.
 
 The module uses SDK worker dispatch for its synchronous methods. The host event
 loop remains free to service asynchronous RLN calls; node operations are
@@ -339,7 +363,7 @@ and proof requests.
 Standalone endpoint APIs remain available for compatibility and protocol tests.
 Mounting an application receiver is unnecessary for forwarding traffic.
 Production Delivery application sending uses native Delivery Mix rather than
-a host manually wrapping `sendMixMessage`.
+a host manually wrapping `send`.
 
 ## Build and validation
 
